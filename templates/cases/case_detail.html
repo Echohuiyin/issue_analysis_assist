@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% load case_tags %}
+
+{% block content %}
+    <h1 class="mb-4">{{ case.title }}</h1>
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Case ID:</h6>
+                    <p>{{ case.case_id }}</p>
+                    <h6>Kernel Version:</h6>
+                    <p>{{ case.kernel_version }}</p>
+                    <h6>Severity:</h6>
+                    <span class="badge {{ case.severity|severity_class }}">
+                        {{ case.severity|severity_display }}
+                    </span>
+                    <h6>Affected Components:</h6>
+                    <p>{{ case.affected_components }}</p>
+                </div>
+                <div class="col-md-6">
+                    <h6>Created Date:</h6>
+                    <p>{{ case.created_date|date:'Y-m-d H:i:s' }}</p>
+                    <h6>Updated Date:</h6>
+                    <p>{{ case.updated_date|date:'Y-m-d H:i:s' }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            Description
+        </div>
+        <div class="card-body">
+            <p>{{ case.description }}</p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            Symptoms
+        </div>
+        <div class="card-body">
+            <p>{{ case.symptoms }}</p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            Root Cause
+        </div>
+        <div class="card-body">
+            <p>{{ case.root_cause }}</p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            Solution
+        </div>
+        <div class="card-body">
+            <p>{{ case.solution }}</p>
+        </div>
+    </div>
+
+    <a href="{% url 'index' %}" class="btn btn-primary">Back to List</a>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% load case_tags %}
+
+{% block content %}
+    <h1 class="mb-4">Database Statistics</h1>
+    
+    <div class="card mb-4">
+        <div class="card-body text-center">
+            <h2 class="card-title">Total Cases</h2>
+            <p class="card-text display-4">{{ total_cases }}</p>
+        </div>
+    </div>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            By Severity
+        </div>
+        <div class="card-body">
+            <div class="row">
+                {% for item in severity_stats %}
+                    <div class="col-md-3">
+                        <div class="card text-white mb-3">
+                            <div class="card-body {{ item.severity|severity_class }}">
+                                <h5 class="card-title">{{ item.severity|severity_display }}</h5>
+                                <p class="card-text display-6">{{ item.count }}</p>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <a href="{% url 'index' %}" class="btn btn-primary">Back to List</a>
+{% endblock %}

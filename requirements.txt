@@ -1,1 +1,22 @@
 Django>=4.2,<5.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# 本地LLM模型支持（可选，根据需要安装）
+
+# 方式1: 使用Ollama（推荐，最简单）
+# 访问 https://ollama.ai/ 下载安装Ollama
+# 运行: ollama pull qwen:1.8b
+
+# 方式2: 使用vLLM（高性能，推荐用于批量处理）
+# pip install vllm
+# CPU推理: export VLLM_TARGET_DEVICE=cpu
+
+# 方式3: 使用Transformers（灵活）
+# transformers>=4.36.0
+# torch>=2.0.0
+# accelerate>=0.25.0
+
+# 云端API支持（可选，付费）
+# openai>=1.0.0

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import sqlite3; conn = sqlite3.connect\\(''db.sqlite3''\\); cursor = conn.execute\\(''SELECT case_id, title FROM cases_kernelcase''\\); rows = cursor.fetchall\\(\\); [print\\(r\\) for r in rows]; conn.close\\(\\)\")",
+      "Bash(python manage.py test cases.tests.test_acquisition -v 2)",
+      "Bash(python verify_acquisition.py)",
+      "Bash(python verify_phase1.py)",
+      "Bash(pip install beautifulsoup4 lxml)"
+    ]
+  }
+}

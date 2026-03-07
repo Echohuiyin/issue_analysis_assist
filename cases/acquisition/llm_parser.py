@@ -15,37 +15,32 @@ class LLMParser:
     """基于LLM的智能解析器"""
     
     # 提取案例信息的提示词模板
-    EXTRACTION_PROMPT = """请仔细阅读以下技术文章内容，提取Linux内核问题的结构化案例信息。
+    EXTRACTION_PROMPT = """你是一名Linux内核专家，请阅读以下技术文章，提取结构化案例信息。
 
 文章内容：
 {content}
 
-请按照以下格式提取信息，以JSON格式返回：
-
+请按照以下格式返回JSON，确保所有字段都有内容，不要使用占位符：
 {{
-    "title": "问题标题（简洁明确，包含关键问题）",
-    "phenomenon": "问题现象描述（包括：具体症状、错误信息、关键日志片段）",
-    "key_logs": "关键日志或错误信息（如果有）",
-    "environment": "环境信息（内核版本、系统版本、硬件平台等）",
-    "root_cause": "根本原因分析（详细说明导致问题的根本原因）",
-    "analysis_process": "问题分析思路和过程（如何定位到问题）",
-    "troubleshooting_steps": ["排查步骤1", "排查步骤2", "..."],
-    "solution": "解决方案（具体的修复方法、代码修改或配置调整）",
-    "prevention": "预防措施（如果文章中有提到）",
-    "confidence": 0.8
+    "title": "直接使用文章标题",
+    "phenomenon": "问题现象",
+    "key_logs": "关键日志",
+    "environment": "环境信息",
+    "root_cause": "根本原因",
+    "analysis_process": "分析过程",
+    "troubleshooting_steps": ["排查步骤1", "步骤2"],
+    "solution": "解决方案",
+    "prevention": "预防措施",
+    "confidence": 0.5
 }}
 
-要求：
-1. phenomenon字段必须包含具体的问题描述，不能只是"见文章"之类的占位符
-2. key_logs字段要提取文章中提到的关键日志、错误信息或调用栈
-3. root_cause要详细说明问题的根本原因，不能只说"见文章"
-4. analysis_process要描述问题分析的思路和方法
-5. troubleshooting_steps要列出具体的排查步骤
-6. solution要提供具体的解决方案，不能只是"见文章"
-7. 如果文章内容不足或无法提取有效信息，confidence设为0.3以下
-8. 如果是高质量案例（问题清晰、分析详细、方案明确），confidence设为0.8以上
+返回要求：
+1. 只返回纯JSON，不要包含其他文本
+2. JSON必须是有效的
+3. 每个字段都要填充实际内容
+4. 如果文章中没有相关信息，填写"无"
 
-请只返回JSON，不要添加其他说明文字。"""
+请立即返回JSON。"""
 
     # 质量评估提示词
     QUALITY_CHECK_PROMPT = """请评估以下案例信息的质量：

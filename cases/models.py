@@ -46,6 +46,7 @@ class KernelCase(models.Model):
     votes = models.IntegerField(verbose_name='Votes', default=0)
     answers_count = models.IntegerField(verbose_name='Answers Count', default=0)
     content_hash = models.CharField(max_length=64, verbose_name='Content Hash', blank=True, null=True, unique=True)
+    embedding = models.JSONField(verbose_name='Embedding', default=list, blank=True, help_text='Vector representation for RAG')
     
     class Meta:
         verbose_name = 'Kernel Issue Case'

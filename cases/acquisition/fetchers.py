@@ -231,3 +231,144 @@ class CSDNFetcher(HTTPFetcher):
         Returns HTML content of the article.
         """
         return super().fetch(url)
+
+
+class ZhihuFetcher(HTTPFetcher):
+    """Fetcher for Zhihu articles/questions - fetches content from Zhihu website"""
+
+    ZHIHU_API_BASE = "https://www.zhihu.com/api/v4"
+
+    def __init__(self, timeout: int = 10):
+        super().__init__(timeout)
+        self.headers['Accept'] = 'application/json, text/plain, */*'
+        self.headers['Referer'] = 'https://www.zhihu.com/'
+
+    def search(self, keyword: str, count: int = 5) -> list:
+        """Search Zhihu for articles/questions matching keyword.
+        Returns list of content URLs.
+        """
+        try:
+            search_url = f"{self.ZHIHU_API_BASE}/search_v5"
+            params = {
+                "type": "content",
+                "q": keyword,
+                "limit": count,
+                "offset": 0
+            }
+            response = requests.get(
+                search_url, params=params, headers=self.headers, timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            urls = []
+            for item in data.get("data", []):
+                if item.get("url"):
+                    urls.append(item["url"])
+                elif item.get("link"):
+                    urls.append(item["link"])
+
+            return urls[:count]
+        except Exception as e:
+            print(f"Error searching Zhihu: {e}")
+            return []
+
+    def fetch(self, url: str) -> str:
+        """Fetch content from Zhihu.
+        Returns HTML/content of the article or answer.
+        """
+        return super().fetch(url)
+
+    def fetch_question_answers(self, question_id: str) -> str:
+        """Fetch question and its answers from Zhihu API.
+        Returns JSON string with question and answer data.
+        """
+        try:
+            q_url = f"{self.ZHIHU_API_BASE}/questions/{question_id}"
+            q_res = requests.get(q_url, headers=self.headers, timeout=self.timeout)
+            q_res.raise_for_status()
+            question = q_res.json()
+
+            a_url = f"{self.ZHIHU_API_BASE}/questions/{question_id}/answers"
+            params = {
+                "limit": 10,
+                "offset": 0,
+                "sort_by": "votes"
+            }
+            a_res = requests.get(a_url, params=params, headers=self.headers, timeout=self.timeout)
+            a_res.raise_for_status()
+            answers = a_res.json()
+
+            result = {
+                "question": question,
+                "answers": answers.get("data", [])
+            }
+            return json.dumps(result)
+        except Exception as e:
+            print(f"Error fetching from Zhihu: {e}")
+            return None
+
+
+class JuejinFetcher(HTTPFetcher):
+    """Fetcher for Juejin articles - fetches articles from Juejin developer community"""
+
+    JUEJIN_API_BASE = "https://api.juejin.cn"
+
+    def __init__(self, timeout: int = 10):
+        super().__init__(timeout)
+        self.headers['Accept'] = 'application/json, text/plain, */*'
+
+    def search(self, keyword: str, count: int = 5) -> list:
+        """Search Juejin for articles matching keyword.
+        Returns list of article URLs.
+        """
+        try:
+            search_url = f"{self.JUEJIN_API_BASE}/content_api/v1/article/search"
+            params = {
+                "keyword": keyword,
+                "type": 1,
+                "limit": count
+            }
+            response = requests.post(
+                search_url, json=params, headers=self.headers, timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            urls = []
+            if data.get("data"):
+                for item in data["data"]:
+                    if item.get("article_info") and item["article_info"].get("article_id"):
+                        article_id = item["article_info"]["article_id"]
+                        urls.append(f"https://juejin.cn/post/{article_id}")
+
+            return urls[:count]
+        except Exception as e:
+            print(f"Error searching Juejin: {e}")
+            return []
+
+    def fetch(self, url: str) -> str:
+        """Fetch article content from Juejin.
+        Returns HTML content of the article.
+        """
+        return super().fetch(url)
+
+    def fetch_article_detail(self, article_id: str) -> str:
+        """Fetch article detail from Juejin API.
+        Returns JSON string with article data.
+        """
+        try:
+            detail_url = f"{self.JUEJIN_API_BASE}/content_api/v1/article/detail"
+            params = {"article_id": article_id}
+            response = requests.post(
+                detail_url, json=params, headers=self.headers, timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("data"):
+                return json.dumps(data["data"])
+            return None
+        except Exception as e:
+            print(f"Error fetching article detail from Juejin: {e}")
+            return None

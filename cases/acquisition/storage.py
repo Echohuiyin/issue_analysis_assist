@@ -5,6 +5,7 @@ import uuid
 # Import the module classifier
 from .classifier import module_classifier
 from .cleaner import content_cleaner
+from .vector_service import get_vector_service
 
 # Add Django imports only if Django is available
 try:
@@ -106,6 +107,18 @@ class CaseStorage:
             if not tags and affected_components:
                 tags = [tag.strip() for tag in affected_components.split(",") if tag.strip()]
 
+            # Generate embedding for the case using VectorService
+            vector_service = get_vector_service()
+            embedding_text = " ".join([
+                case_data.get("title", ""),
+                case_data.get("phenomenon", ""),
+                case_data.get("root_cause", ""),
+                case_data.get("solution", ""),
+                case_data.get("problem_analysis", ""),
+                case_data.get("conclusion", "")
+            ])
+            embedding = vector_service.generate_embedding(embedding_text)
+            
             case = KernelCase(
                 case_id=case_id,
                 title=case_data.get("title", "Untitled Case")[:200],
@@ -128,7 +141,8 @@ class CaseStorage:
                 tags=tags,
                 votes=case_data.get("votes", 0),
                 answers_count=case_data.get("answers_count", 0),
-                content_hash=content_hash
+                content_hash=content_hash,
+                embedding=embedding
             )
 
             case.save()

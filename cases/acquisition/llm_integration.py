@@ -87,7 +87,7 @@ class OllamaLLM(BaseLLM):
                         "top_p": 0.9
                     }
                 },
-                timeout=60
+                timeout=180
             )
             response.raise_for_status()
             return response.json().get('response', '')

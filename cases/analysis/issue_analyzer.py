@@ -2,6 +2,17 @@ import os
 import re
 from typing import Dict, List, Optional
 from .skill_storage import SKILLStorage
+from cases.acquisition.vector_service import get_vector_service
+
+# Add Django imports only if Django is available
+try:
+    from django.db.models import Q
+    from cases.models import KernelCase
+    DJANGO_AVAILABLE = True
+except ImportError:
+    Q = None
+    KernelCase = None
+    DJANGO_AVAILABLE = False
 
 class IssueAnalyzer:
     """
@@ -48,17 +59,20 @@ class IssueAnalyzer:
         if logs:
             input_data += "\n\nRelevant Logs:\n" + logs
         
+        # Retrieve similar cases using RAG
+        similar_cases = self._retrieve_similar_cases(issue_description, logs)
+        
         # Determine which SKILLs to use based on keywords in the issue description
         relevant_skills = self._find_relevant_skills(issue_description)
         
         # Analyze with each relevant SKILL
         analysis_results = []
         for skill_name, skill_data in relevant_skills.items():
-            result = self._apply_skill(skill_name, skill_data, input_data)
+            result = self._apply_skill(skill_name, skill_data, input_data, similar_cases)
             analysis_results.append(result)
         
         # Generate overall analysis summary
-        summary = self._generate_summary(analysis_results)
+        summary = self._generate_summary(analysis_results, similar_cases)
         
         return {
             "issue_description": issue_description,
@@ -66,8 +80,60 @@ class IssueAnalyzer:
             "relevant_skills_used": list(relevant_skills.keys()),
             "detailed_analysis": analysis_results,
             "summary": summary,
-            "confidence_score": self._calculate_confidence(analysis_results)
+            "confidence_score": self._calculate_confidence(analysis_results),
+            "similar_cases": similar_cases
         }
+    
+    def _retrieve_similar_cases(self, issue_description: str, logs: Optional[str] = None, top_k: int = 3) -> List[Dict]:
+        """
+        Retrieve similar cases from the database using vector similarity (RAG).
+        
+        Args:
+            issue_description: Text description of the issue
+            logs: Optional log content related to the issue
+            top_k: Number of similar cases to retrieve
+            
+        Returns:
+            List of similar cases with their similarity scores
+        """
+        if not DJANGO_AVAILABLE:
+            return []
+        
+        try:
+            # Generate embedding for the current issue
+            vector_service = get_vector_service()
+            issue_text = issue_description
+            if logs:
+                issue_text += "\n\nRelevant Logs:\n" + logs
+            issue_embedding = vector_service.generate_embedding(issue_text)
+            
+            # Retrieve all cases with embeddings from the database
+            cases = KernelCase.objects.exclude(embedding__isnull=True).exclude(embedding__exact=[])
+            
+            # Convert cases to dictionaries with embeddings
+            case_dicts = []
+            for case in cases:
+                case_dict = {
+                    "case_id": case.case_id,
+                    "title": case.title,
+                    "description": case.description,
+                    "symptoms": case.symptoms,
+                    "root_cause": case.root_cause,
+                    "solution": case.solution,
+                    "module": case.module,
+                    "kernel_version": case.kernel_version,
+                    "embedding": case.embedding
+                }
+                case_dicts.append(case_dict)
+            
+            # Find similar cases
+            similar_cases = vector_service.find_similar(issue_embedding, case_dicts, top_k=top_k)
+            
+            return similar_cases
+            
+        except Exception as e:
+            print(f"Error retrieving similar cases: {str(e)}")
+            return []
     
     def _find_relevant_skills(self, issue_description: str) -> Dict[str, Dict]:
         """
@@ -112,7 +178,7 @@ class IssueAnalyzer:
         
         return relevant_skills
     
-    def _apply_skill(self, skill_name: str, skill_data: Dict, input_data: str) -> Dict:
+    def _apply_skill(self, skill_name: str, skill_data: Dict, input_data: str, similar_cases: List[Dict]) -> Dict:
         """
         Apply a specific SKILL to analyze the issue.
         
@@ -120,6 +186,7 @@ class IssueAnalyzer:
             skill_name: Name of the SKILL to apply
             skill_data: SKILL data dictionary
             input_data: Combined issue description and logs
+            similar_cases: List of similar cases for context
             
         Returns:
             Dictionary containing analysis results for this SKILL
@@ -169,12 +236,13 @@ class IssueAnalyzer:
             "confidence": 0.75  # Simulated confidence score
         }
     
-    def _generate_summary(self, analysis_results: List[Dict]) -> str:
+    def _generate_summary(self, analysis_results: List[Dict], similar_cases: List[Dict]) -> str:
         """
         Generate a summary of the analysis results from all SKILLs.
         
         Args:
             analysis_results: List of analysis results from each SKILL
+            similar_cases: List of similar cases for reference
             
         Returns:
             Summary text
@@ -210,6 +278,22 @@ class IssueAnalyzer:
         
         for i, step in enumerate(all_steps, 1):
             summary += f"{i}. {step}\n"
+        
+        # Add similar cases section if available
+        if similar_cases:
+            summary += "\n### Similar Kernel Cases Found\n"
+            summary += "The following similar cases were found in the database:\n"
+            for i, similar_case in enumerate(similar_cases, 1):
+                case = similar_case["case"]
+                similarity = similar_case["similarity"]
+                summary += f"\n{i}. **{case['title']}** (Similarity: {similarity:.2f})\n"
+                summary += f"   - Case ID: {case['case_id']}\n"
+                summary += f"   - Module: {case['module']}\n"
+                summary += f"   - Kernel Version: {case['kernel_version']}\n"
+                if case['root_cause']:
+                    summary += f"   - Root Cause: {case['root_cause'][:100]}...\n"
+                if case['solution']:
+                    summary += f"   - Solution: {case['solution'][:100]}...\n"
         
         return summary
     

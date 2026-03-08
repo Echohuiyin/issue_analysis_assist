@@ -1046,3 +1046,25 @@ export VLLM_CPU_THREADS=4
 ### 关键联调脚本
 - `verify_phase1.py`：采集侧能力与吞吐优化验证。
 - `verify_storage_rag.py`：数据库CRUD + 本地RAG向量库联调验证。
+
+## V2.7 第一/二部分重构与范围收敛（2026-03-08）
+
+### 目标
+- 以可读性、模块化、解耦为目标，重构第一/二部分核心代码。
+- 清理第三/四部分运行实现，仅保留必要接口占位。
+- 统一文档到“SQLite优先、PostgreSQL后置”的当前执行策略。
+
+### 已完成项
+- [x] 重构 `cases/acquisition/main.py`，拆分 source 解析、内容解析、source_id 提取、模块分类等职责函数。
+- [x] 重构 `cases/acquisition/storage.py`，拆分哈希、映射、RAG upsert 为独立方法，并保持 RAG best-effort。
+- [x] 增强 `cases/acquisition/llm_parser.py`、`cases/acquisition/validators.py` 注释与质量门禁语义（80分门槛）。
+- [x] 配置说明更新：`kernel_cases/settings.py` 明确 SQLite 默认优先。
+- [x] 清理第三/四部分实现：
+  - 删除：`cases/analysis/skill_storage.py`、`cases/analysis/skill_trainer.py`、`cases/analysis/issue_analyzer.py`
+  - 删除测试：`cases/tests/test_skill.py`、`cases/tests/test_issue_analyzer.py`
+  - 保留接口：`cases/analysis/interfaces.py` + `cases/analysis/__init__.py` 兼容导出
+
+### 当前状态结论
+- 第一/二部分为唯一运行主路径，支持多源采集、解析、质量过滤、SQLite 存储与本地 RAG 检索。
+- 第三/四部分为后续阶段接口保留，不参与当前交付与验证。
+- PostgreSQL 在本阶段降级为后置任务（可选启用，不作为当前阻塞项）。

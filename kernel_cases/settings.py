@@ -64,9 +64,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'kernel_cases.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
+# Database strategy:
+# - Default path for current project phase: SQLite (local debugging).
+# - Optional path (lower priority): PostgreSQL via USE_POSTGRES=1.
 USE_POSTGRES = os.getenv("USE_POSTGRES", "0") == "1"
 
 if USE_POSTGRES:

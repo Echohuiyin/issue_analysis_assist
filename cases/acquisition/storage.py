@@ -1,29 +1,79 @@
 import re
-from typing import Dict, Optional
+from typing import Dict
 import uuid
 
-# Import the module classifier
 from .classifier import module_classifier
 from .cleaner import content_cleaner
 from cases.rag import get_local_vector_store
 
-# Add Django imports only if Django is available
+# Django is optional for script-only mode.
 try:
     from django.utils import timezone
-    from django.db.models import Q
     from cases.models import KernelCase
     DJANGO_AVAILABLE = True
 except ImportError:
     timezone = None
-    Q = None
     KernelCase = None
     DJANGO_AVAILABLE = False
 
-# Regex for kernel version extraction from environment string
 KERNEL_VER_RE = re.compile(r'(?:Linux|kernel)\s*(\d+\.\d+[\.\d]*(?:-[\w.]+)?)', re.IGNORECASE)
 
 
 class CaseStorage:
+    """Persistence gateway for phase-2 case storage + local RAG indexing."""
+
+    def _generate_content_hash(self, case_data: Dict) -> str:
+        content_parts = [
+            case_data.get("title", ""),
+            case_data.get("phenomenon", ""),
+            case_data.get("root_cause", ""),
+            case_data.get("solution", ""),
+        ]
+        combined_content = " ".join(filter(None, content_parts))
+        return content_cleaner.compute_content_hash(combined_content)
+
+    def _extract_kernel_version(self, environment: str) -> str:
+        match = KERNEL_VER_RE.search(environment or "")
+        return match.group(1) if match else ""
+
+    def _classify_module(self, case_data: Dict) -> str:
+        module = case_data.get("module", "")
+        if module:
+            return module
+        classification_text = " ".join([
+            case_data.get("title", ""),
+            case_data.get("phenomenon", ""),
+            case_data.get("root_cause", ""),
+            case_data.get("solution", ""),
+        ])
+        return module_classifier.classify_module(classification_text)
+
+    def _build_description(self, phenomenon: str, environment: str, reference_url: str) -> str:
+        description = phenomenon or ""
+        if environment:
+            description += f"\n\nEnvironment: {environment}"
+        if reference_url:
+            description += f"\n\nReference: {reference_url}"
+        return description
+
+    def _upsert_local_rag(self, case_id: str, case_data: Dict, case_obj, reference_url: str) -> None:
+        """Best-effort local RAG write; must never break main DB flow."""
+        try:
+            vector_store = get_local_vector_store()
+            vector_store.upsert_case(case_id, {
+                "title": str(getattr(case_obj, "title", case_data.get("title", ""))),
+                "module": str(getattr(case_obj, "module", case_data.get("module", "other"))),
+                "phenomenon": case_data.get("phenomenon", ""),
+                "problem_analysis": case_data.get("problem_analysis", case_data.get("analysis_process", "")),
+                "related_code": case_data.get("related_code", ""),
+                "root_cause": str(getattr(case_obj, "root_cause", case_data.get("root_cause", ""))),
+                "solution": str(getattr(case_obj, "solution", case_data.get("solution", ""))),
+                "source": str(getattr(case_obj, "source", case_data.get("source", ""))),
+                "reference_url": reference_url,
+            })
+        except Exception as rag_error:
+            print(f"Warning: RAG vector upsert failed for {case_id}: {rag_error}")
+
     def store(self, case_data: Dict) -> Dict:
         """Store the case data to database and return result"""
         if not case_data:
@@ -40,18 +90,7 @@ class CaseStorage:
                     "case_id": f"CASE-{uuid.uuid4().hex[:8].upper()}"
                 }
 
-            # Generate content hash for deduplication
-            # Combine title, description, root_cause, solution for unique content hash
-            content_parts = [
-                case_data.get("title", ""),
-                case_data.get("phenomenon", ""),
-                case_data.get("root_cause", ""),
-                case_data.get("solution", "")
-            ]
-            combined_content = " ".join(filter(None, content_parts))
-            content_hash = content_cleaner.compute_content_hash(combined_content)
-            
-            # Deduplication: check by content_hash
+            content_hash = self._generate_content_hash(case_data)
             if content_hash:
                 existing = KernelCase.objects.filter(content_hash=content_hash).first()
                 if existing:
@@ -61,10 +100,7 @@ class CaseStorage:
                         "case_id": existing.case_id
                     }
 
-            # Generate unique case ID if not provided
             case_id = case_data.get("case_id", f"CASE-{uuid.uuid4().hex[:8].upper()}")
-
-            # Check if case_id already exists
             if KernelCase.objects.filter(case_id=case_id).exists():
                 return {
                     "success": False,
@@ -72,37 +108,14 @@ class CaseStorage:
                     "case_id": case_id
                 }
 
-            # Extract kernel version from environment
-            kernel_version = ""
             env_str = case_data.get("environment", "")
-            match = KERNEL_VER_RE.search(env_str)
-            if match:
-                kernel_version = match.group(1)
-
+            kernel_version = self._extract_kernel_version(env_str)
             affected_components = case_data.get("affected_components", "Unknown")
-
-            # Build description with reference URL
             phenomenon = case_data.get("phenomenon", "")
-            description = phenomenon
-            if env_str:
-                description += f"\n\nEnvironment: {env_str}"
             ref_url = case_data.get("reference_url", "")
-            if ref_url:
-                description += f"\n\nReference: {ref_url}"
+            module = self._classify_module(case_data)
+            description = self._build_description(phenomenon, env_str, ref_url)
 
-            # Classify kernel module if not provided
-            module = case_data.get("module", "")
-            if not module:
-                # Combine text from multiple fields for better classification
-                classification_text = " ".join([
-                    case_data.get("title", ""),
-                    case_data.get("phenomenon", ""),
-                    case_data.get("root_cause", ""),
-                    case_data.get("solution", "")
-                ])
-                module = module_classifier.classify_module(classification_text)
-
-            # Extract tags from affected_components if not provided
             tags = case_data.get("tags", [])
             if not tags and affected_components:
                 tags = [tag.strip() for tag in affected_components.split(",") if tag.strip()]
@@ -133,24 +146,7 @@ class CaseStorage:
             )
 
             case.save()
-
-            # Update local RAG vector store after DB commit.
-            # This path is best-effort and must not break DB write success.
-            try:
-                vector_store = get_local_vector_store()
-                vector_store.upsert_case(case_id, {
-                    "title": str(getattr(case, "title", case_data.get("title", ""))),
-                    "module": str(getattr(case, "module", case_data.get("module", "other"))),
-                    "phenomenon": case_data.get("phenomenon", ""),
-                    "problem_analysis": case_data.get("problem_analysis", case_data.get("analysis_process", "")),
-                    "related_code": case_data.get("related_code", ""),
-                    "root_cause": str(getattr(case, "root_cause", case_data.get("root_cause", ""))),
-                    "solution": str(getattr(case, "solution", case_data.get("solution", ""))),
-                    "source": str(getattr(case, "source", case_data.get("source", ""))),
-                    "reference_url": ref_url,
-                })
-            except Exception as rag_error:
-                print(f"Warning: RAG vector upsert failed for {case_id}: {rag_error}")
+            self._upsert_local_rag(case_id, case_data, case, ref_url)
 
             return {
                 "success": True,

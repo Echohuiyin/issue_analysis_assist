@@ -57,6 +57,9 @@ class CaseValidator:
         r"^See\s+\w+\s+for\s+(details|solution)",
         r"^See\s+\w+\s+discussion",
     ]
+
+    # Project-level quality gate: scores below this are considered invalid.
+    QUALITY_PASS_SCORE = 80
     
     def __init__(self):
         self.required_fields = [
@@ -195,7 +198,7 @@ class CaseValidator:
         
         # 判断是否为高质量案例
         is_high_quality = (
-            overall_score >= 70 and
+            overall_score >= self.QUALITY_PASS_SCORE and
             quality_scores.get("phenomenon", 0) >= 60 and
             quality_scores.get("key_logs", 0) >= 50 and
             quality_scores.get("analysis_process", 0) >= 50

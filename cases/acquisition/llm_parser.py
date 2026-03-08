@@ -12,7 +12,12 @@ from .llm_integration import get_llm
 
 
 class LLMParser:
-    """基于LLM的智能解析器"""
+    """基于LLM的智能解析器。
+
+    输出字段围绕第一/二部分联调需求组织：
+    title/module/phenomenon/analysis_process/related_code/root_cause/solution/fix_code
+    并在后处理阶段补齐完整性指标，供质量门禁使用。
+    """
     
     # 提取案例信息的提示词模板
     EXTRACTION_PROMPT = """请仔细阅读以下技术文章内容，提取Linux内核问题的结构化案例信息。

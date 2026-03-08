@@ -1,10 +1,10 @@
-# Analysis module for kernel issue automated analysis
-# This module handles SKILL training and automated issue analysis
+"""Analysis module compatibility exports.
 
-# Core analysis components
-from .skill_trainer import SKILLTrainer
-from .issue_analyzer import IssueAnalyzer
-from .skill_storage import SKILLStorage
+Actual part-3/4 implementations are intentionally postponed.
+Only interface placeholders are exported.
+"""
+
+from .interfaces import SKILLTrainer, IssueAnalyzer, SKILLStorage
 
 __all__ = [
     "SKILLTrainer",

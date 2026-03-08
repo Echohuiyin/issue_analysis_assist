@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Optional
+from typing import List, Dict, Tuple
 
 from .fetchers import HTTPFetcher, StackOverflowFetcher, CSDNFetcher, ZhihuFetcher
 from .parsers import BlogParser, ForumParser, ZhihuParser
@@ -10,7 +10,7 @@ from .cleaner import content_cleaner
 from .classifier import module_classifier
 
 
-# Pre-defined search keywords for kernel cases
+# Default search keywords used by batch acquisition.
 KERNEL_KEYWORDS = [
     "kernel panic",
     "kernel oops",
@@ -19,6 +19,7 @@ KERNEL_KEYWORDS = [
     "kernel OOM",
     "kernel page allocation failure",
 ]
+# Global quality gate: cases below this score are discarded.
 QUALITY_THRESHOLD = 80.0
 
 
@@ -35,69 +36,69 @@ def _to_cn_keyword(keyword: str) -> str:
 
 
 class CaseAcquisition:
+    """Acquisition orchestrator for phase-1/2 pipeline.
+
+    The orchestrator keeps only flow-control logic:
+    fetch -> parse -> clean -> classify -> validate -> store
+    """
+
     def __init__(self):
+        # Fetchers
         self.fetcher = HTTPFetcher()
         self.so_fetcher = StackOverflowFetcher()
         self.csdn_fetcher = CSDNFetcher()
         self.zhihu_fetcher = ZhihuFetcher()
+
+        # Core collaborators
         self.validators = CaseValidator()
         self.storage = CaseStorage()
         self.llm_parser = LLMParser(llm_type="auto")
 
-        # Register parsers for different content types
+        # Source-specific parser fallback map.
         self.parsers = {
             "blog": BlogParser(),
             "forum": ForumParser(),
             "zhihu": ZhihuParser(),
         }
 
-    def acquire_case(self, url: str, content_type: str = "blog", source: str = "") -> Dict:
-        """Acquire a single case from the given URL"""
-        # Choose fetcher based on URL or content type
+    def _resolve_source(self, url: str, content_type: str, source: str) -> Tuple[str, str, str]:
+        """Resolve source/fetcher/content_type based on URL pattern."""
         if "stackexchange.com" in url or "stackoverflow.com" in url:
             content = self.so_fetcher.fetch(url)
-            content_type = "forum"
-            source = source or "stackoverflow"
-        elif "csdn.net" in url:
+            return content, "forum", source or "stackoverflow"
+        if "csdn.net" in url:
             content = self.csdn_fetcher.fetch(url)
-            content_type = "blog"
-            source = source or "csdn"
-        elif "zhihu.com" in url:
+            return content, "blog", source or "csdn"
+        if "zhihu.com" in url:
             content = self.zhihu_fetcher.fetch(url)
-            content_type = "zhihu"
-            source = source or "zhihu"
-        else:
-            content = self.fetcher.fetch(url)
-            source = source or "unknown"
+            return content, "zhihu", source or "zhihu"
+        content = self.fetcher.fetch(url)
+        return content, content_type, source or "unknown"
 
-        if not content:
-            return {
-                "success": False,
-                "message": f"Failed to fetch content from {url}"
-            }
-
-        # Parse content with local LLM first, then fallback to source parser.
+    def _parse_content(self, content: str, content_type: str):
+        """Parse content via local LLM first, then source fallback parser."""
         parsed_data = None
         if content_type in ("blog", "zhihu"):
             parsed_data = self.llm_parser.parse(content, use_llm=True)
-
         if not parsed_data:
             parser = self.parsers.get(content_type, BlogParser())
             parsed_data = parser.parse(content)
-        if not parsed_data:
-            return {
-                "success": False,
-                "message": f"Failed to parse content from {url}"
-            }
+        return parsed_data
 
-        # Add reference URL to parsed data if not already set
-        if not parsed_data.get("reference_url"):
-            parsed_data["reference_url"] = url
+    def _extract_source_id(self, url: str, source: str) -> str:
+        """Extract platform-native source id from URL."""
+        if source == "stackoverflow" and "/questions/" in url:
+            return url.split("/questions/")[1].split("/")[0]
+        if source == "csdn" and "/article/details/" in url:
+            return url.split("/article/details/")[1].split("/")[0]
+        if source == "zhihu":
+            if "/question/" in url:
+                return url.split("/question/")[1].split("/")[0]
+            if "/p/" in url:
+                return url.split("/p/")[1].split("/")[0]
+        return ""
 
-        # Add source information
-        parsed_data["source"] = source
-
-        # Standardized pipeline: fetch -> parse -> clean -> classify -> validate -> store
+    def _classify_case_module(self, parsed_data: Dict, content: str) -> str:
         cleaned_text = content_cleaner.clean_html(content)
         classify_text = "\n".join([
             parsed_data.get("title", ""),
@@ -106,24 +107,34 @@ class CaseAcquisition:
             parsed_data.get("solution", ""),
             cleaned_text[:1000],
         ])
-        parsed_data["module"] = module_classifier.classify_module(classify_text)
+        return module_classifier.classify_module(classify_text)
 
-        # Extract source_id from URL
-        if source == "stackoverflow" and "/questions/" in url:
-            # Extract question ID from URL like https://stackoverflow.com/questions/12345/...
-            source_id = url.split("/questions/")[1].split("/")[0]
-            parsed_data["source_id"] = source_id
-        elif source == "csdn" and "/article/details/" in url:
-            # Extract article ID from URL like https://blog.csdn.net/user/article/details/123456789
-            source_id = url.split("/article/details/")[1].split("/")[0]
-            parsed_data["source_id"] = source_id
-        elif source == "zhihu":
-            if "/question/" in url:
-                parsed_data["source_id"] = url.split("/question/")[1].split("/")[0]
-            elif "/p/" in url:
-                parsed_data["source_id"] = url.split("/p/")[1].split("/")[0]
+    def acquire_case(self, url: str, content_type: str = "blog", source: str = "") -> Dict:
+        """Acquire one case from URL and pass quality-gated storage."""
+        content, content_type, source = self._resolve_source(url, content_type, source)
+        if not content:
+            return {
+                "success": False,
+                "message": f"Failed to fetch content from {url}"
+            }
 
-        # Validate parsed data
+        parsed_data = self._parse_content(content, content_type)
+        if not parsed_data:
+            return {
+                "success": False,
+                "message": f"Failed to parse content from {url}"
+            }
+
+        # Normalize source metadata.
+        if not parsed_data.get("reference_url"):
+            parsed_data["reference_url"] = url
+        parsed_data["source"] = source
+        parsed_data["module"] = self._classify_case_module(parsed_data, content)
+        source_id = self._extract_source_id(url, source)
+        if source_id:
+            parsed_data["source_id"] = source_id
+
+        # Quality validation + gate.
         validation_result = self.validators.validate(parsed_data)
         if not validation_result["is_valid"]:
             return {
@@ -142,22 +153,18 @@ class CaseAcquisition:
                 "quality_score": validation_result.get("quality_score", 0),
                 "low_quality_flags": validation_result.get("low_quality_flags", []),
             }
-        
-        # Log quality score and warnings even if validation passes
+
+        # Keep warnings visible for observability.
         quality_score = validation_result.get("quality_score", 0)
         warnings = validation_result.get("warnings", [])
-        
         if quality_score < 60:
             print(f"Warning: Low quality score ({quality_score:.1f}) for case: {parsed_data.get('title', 'Unknown')}")
-        
         if warnings:
             print(f"Quality warnings for case '{parsed_data.get('title', 'Unknown')}':")
             for warning in warnings:
                 print(f"  - {warning}")
 
-        # Store case
-        storage_result = self.storage.store(parsed_data)
-        return storage_result
+        return self.storage.store(parsed_data)
 
     def acquire_cases(
         self,
@@ -204,7 +211,7 @@ class CaseAcquisition:
         return [item[1] for item in indexed_results]
 
     def acquire_from_stackoverflow(self, keyword: str = "kernel panic", count: int = 3) -> List[Dict]:
-        """Search StackOverflow for kernel-related questions and acquire them as cases"""
+        """Search StackOverflow and ingest question cases."""
         print(f"Searching StackOverflow for: {keyword} (max {count} results)")
         urls = self.so_fetcher.search(keyword, count=count)
 
@@ -216,7 +223,7 @@ class CaseAcquisition:
         return self.acquire_cases(sources)
 
     def acquire_from_csdn(self, keyword: str = "内核 panic", count: int = 3) -> List[Dict]:
-        """Search CSDN for kernel-related articles and acquire them as cases"""
+        """Search CSDN and ingest article cases."""
         print(f"Searching CSDN for: {keyword} (max {count} results)")
         urls = self.csdn_fetcher.search(keyword, count=count)
 
@@ -228,7 +235,7 @@ class CaseAcquisition:
         return self.acquire_cases(sources)
 
     def acquire_from_zhihu(self, keyword: str = "内核 panic", count: int = 3) -> List[Dict]:
-        """Search Zhihu for kernel-related content and acquire them as cases."""
+        """Search Zhihu and ingest content cases."""
         print(f"Searching Zhihu for: {keyword} (max {count} results)")
         urls = self.zhihu_fetcher.search(keyword, count=count)
 

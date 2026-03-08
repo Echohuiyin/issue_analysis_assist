@@ -108,7 +108,10 @@ class CaseValidator:
             "is_valid": is_valid,
             "errors": errors,
             "warnings": warnings,
-            "quality_score": quality_result.get("quality_score", 0)
+            "quality_score": quality_result.get("quality_score", 0),
+            "is_high_quality": quality_result.get("is_high_quality", False),
+            "quality_scores": quality_result.get("quality_scores", {}),
+            "low_quality_flags": quality_result.get("low_quality_flags", []),
         }
     
     def validate_content_quality(self, case_data: Dict) -> Dict:
@@ -122,6 +125,7 @@ class CaseValidator:
         errors = []
         warnings = []
         quality_scores = {}
+        low_quality_flags = []
         
         # 1. 验证标题
         title_result = self._validate_title(case_data.get("title", ""))
@@ -165,6 +169,14 @@ class CaseValidator:
         if not solution_result["is_valid"]:
             errors.extend(solution_result["errors"])
         warnings.extend(solution_result.get("warnings", []))
+
+        # 7. 字段完整性严格检查（新增）
+        completeness_result = self._validate_field_completeness(case_data)
+        quality_scores["completeness"] = completeness_result["score"]
+        if not completeness_result["is_valid"]:
+            errors.extend(completeness_result.get("errors", []))
+        warnings.extend(completeness_result.get("warnings", []))
+        low_quality_flags.extend(completeness_result.get("flags", []))
         
         # 计算总体质量分数（加权平均）
         weights = {
@@ -179,7 +191,7 @@ class CaseValidator:
         overall_score = sum(
             quality_scores.get(field, 0) * weight
             for field, weight in weights.items()
-        )
+        ) + quality_scores.get("completeness", 0) * 0.1
         
         # 判断是否为高质量案例
         is_high_quality = (
@@ -195,7 +207,44 @@ class CaseValidator:
             "errors": errors,
             "warnings": warnings,
             "quality_scores": quality_scores,
-            "quality_score": overall_score
+            "quality_score": min(100, overall_score),
+            "low_quality_flags": sorted(list(dict.fromkeys(low_quality_flags))),
+        }
+
+    def _validate_field_completeness(self, case_data: Dict) -> Dict:
+        """Strict field-level completeness checks with low-quality flags."""
+        errors = []
+        warnings = []
+        flags = []
+
+        required = {
+            "phenomenon": 40,
+            "key_logs": 30,
+            "analysis_process": 40,
+            "root_cause": 40,
+            "solution": 40,
+        }
+
+        fulfilled = 0
+        for field, min_len in required.items():
+            value = str(case_data.get(field, "") or "").strip()
+            if value and len(value) >= min_len and not self._is_fallback_content(value):
+                fulfilled += 1
+            else:
+                flags.append(f"{field}_incomplete")
+                if field in ("phenomenon", "root_cause", "solution"):
+                    errors.append(f"Field '{field}' is incomplete (min {min_len} chars, non-fallback required)")
+                else:
+                    warnings.append(f"Field '{field}' is incomplete (min {min_len} chars recommended)")
+
+        score = int((fulfilled / len(required)) * 100)
+        is_valid = fulfilled >= 3 and not any(f in flags for f in ["phenomenon_incomplete", "root_cause_incomplete", "solution_incomplete"])
+        return {
+            "is_valid": is_valid,
+            "errors": errors,
+            "warnings": warnings,
+            "flags": flags,
+            "score": score,
         }
     
     def _validate_title(self, title: str) -> Dict:

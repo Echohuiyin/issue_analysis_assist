@@ -1,10 +1,12 @@
-from .fetchers import HTTPFetcher, StackOverflowFetcher, CSDNFetcher, BaseFetcher
-from .parsers import BlogParser, ForumParser, BaseParser
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Optional
+
+from .fetchers import HTTPFetcher, StackOverflowFetcher, CSDNFetcher, ZhihuFetcher
+from .parsers import BlogParser, ForumParser, ZhihuParser
 from .validators import CaseValidator
 from .storage import CaseStorage
 from .cleaner import content_cleaner
 from .classifier import module_classifier
-from typing import List, Dict, Optional
 
 
 # Pre-defined search keywords for kernel cases
@@ -18,11 +20,24 @@ KERNEL_KEYWORDS = [
 ]
 
 
+def _to_cn_keyword(keyword: str) -> str:
+    mapping = {
+        "kernel panic": "内核 panic",
+        "kernel oops": "内核 oops",
+        "kernel deadlock": "内核死锁",
+        "kernel null pointer dereference": "内核空指针",
+        "kernel OOM": "内核 OOM",
+        "kernel page allocation failure": "内核页分配失败",
+    }
+    return mapping.get(keyword, keyword)
+
+
 class CaseAcquisition:
     def __init__(self):
         self.fetcher = HTTPFetcher()
         self.so_fetcher = StackOverflowFetcher()
         self.csdn_fetcher = CSDNFetcher()
+        self.zhihu_fetcher = ZhihuFetcher()
         self.validators = CaseValidator()
         self.storage = CaseStorage()
 
@@ -30,6 +45,7 @@ class CaseAcquisition:
         self.parsers = {
             "blog": BlogParser(),
             "forum": ForumParser(),
+            "zhihu": ZhihuParser(),
         }
 
     def acquire_case(self, url: str, content_type: str = "blog", source: str = "") -> Dict:
@@ -43,6 +59,10 @@ class CaseAcquisition:
             content = self.csdn_fetcher.fetch(url)
             content_type = "blog"
             source = source or "csdn"
+        elif "zhihu.com" in url:
+            content = self.zhihu_fetcher.fetch(url)
+            content_type = "zhihu"
+            source = source or "zhihu"
         else:
             content = self.fetcher.fetch(url)
             source = source or "unknown"
@@ -68,7 +88,18 @@ class CaseAcquisition:
 
         # Add source information
         parsed_data["source"] = source
-        
+
+        # Standardized pipeline: fetch -> parse -> clean -> classify -> validate -> store
+        cleaned_text = content_cleaner.clean_html(content)
+        classify_text = "\n".join([
+            parsed_data.get("title", ""),
+            parsed_data.get("phenomenon", ""),
+            parsed_data.get("root_cause", ""),
+            parsed_data.get("solution", ""),
+            cleaned_text[:1000],
+        ])
+        parsed_data["module"] = module_classifier.classify_module(classify_text)
+
         # Extract source_id from URL
         if source == "stackoverflow" and "/questions/" in url:
             # Extract question ID from URL like https://stackoverflow.com/questions/12345/...
@@ -78,6 +109,11 @@ class CaseAcquisition:
             # Extract article ID from URL like https://blog.csdn.net/user/article/details/123456789
             source_id = url.split("/article/details/")[1].split("/")[0]
             parsed_data["source_id"] = source_id
+        elif source == "zhihu":
+            if "/question/" in url:
+                parsed_data["source_id"] = url.split("/question/")[1].split("/")[0]
+            elif "/p/" in url:
+                parsed_data["source_id"] = url.split("/p/")[1].split("/")[0]
 
         # Validate parsed data
         validation_result = self.validators.validate(parsed_data)
@@ -106,26 +142,49 @@ class CaseAcquisition:
         storage_result = self.storage.store(parsed_data)
         return storage_result
 
-    def acquire_cases(self, sources: List[Dict]) -> List[Dict]:
-        """Acquire multiple cases from different sources"""
-        results = []
+    def acquire_cases(
+        self,
+        sources: List[Dict],
+        max_workers: int = 4,
+        batch_size: int = 10,
+        use_concurrency: bool = True,
+    ) -> List[Dict]:
+        """Acquire multiple cases with bounded concurrency and batching."""
+        if not sources:
+            return []
 
-        for source in sources:
-            url = source.get("url")
-            content_type = source.get("content_type", "blog")
+        def _acquire_one(index: int, source_item: Dict):
+            url = source_item.get("url")
+            content_type = source_item.get("content_type", "blog")
+            source_name = source_item.get("source", "")
 
             if not url:
-                results.append({
+                return index, {
                     "success": False,
-                    "message": "No URL provided for source"
-                })
-                continue
+                    "message": "No URL provided for source",
+                    "source_url": "",
+                }
 
-            result = self.acquire_case(url, content_type)
+            result = self.acquire_case(url, content_type=content_type, source=source_name)
             result["source_url"] = url
-            results.append(result)
+            return index, result
 
-        return results
+        indexed_results = []
+        if not use_concurrency or max_workers <= 1:
+            for i, source_item in enumerate(sources):
+                indexed_results.append(_acquire_one(i, source_item))
+        else:
+            workers = max(1, min(max_workers, 16))
+            step = max(1, batch_size)
+            for start in range(0, len(sources), step):
+                batch = sources[start:start + step]
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = [pool.submit(_acquire_one, start + i, src) for i, src in enumerate(batch)]
+                    for future in as_completed(futures):
+                        indexed_results.append(future.result())
+
+        indexed_results.sort(key=lambda item: item[0])
+        return [item[1] for item in indexed_results]
 
     def acquire_from_stackoverflow(self, keyword: str = "kernel panic", count: int = 3) -> List[Dict]:
         """Search StackOverflow for kernel-related questions and acquire them as cases"""
@@ -151,20 +210,32 @@ class CaseAcquisition:
         sources = [{"url": url, "content_type": "blog", "source": "csdn"} for url in urls]
         return self.acquire_cases(sources)
 
+    def acquire_from_zhihu(self, keyword: str = "内核 panic", count: int = 3) -> List[Dict]:
+        """Search Zhihu for kernel-related content and acquire them as cases."""
+        print(f"Searching Zhihu for: {keyword} (max {count} results)")
+        urls = self.zhihu_fetcher.search(keyword, count=count)
+
+        if not urls:
+            print(f"No results found for: {keyword}")
+            return []
+
+        sources = [{"url": url, "content_type": "zhihu", "source": "zhihu"} for url in urls]
+        return self.acquire_cases(sources)
+
     def run(self, keywords: List[str] = None, max_per_keyword: int = 2, sources: List[str] = None) -> List[Dict]:
         """Run acquisition from all specified sources.
-        Searches StackOverflow and CSDN for each keyword and collects cases.
+        Searches StackOverflow/CSDN/Zhihu for each keyword and collects cases.
         
         Args:
             keywords: List of keywords to search for
             max_per_keyword: Maximum number of cases to acquire per keyword per source
-            sources: List of sources to use ("stackoverflow", "csdn"), defaults to all
+            sources: List of sources to use ("stackoverflow", "csdn", "zhihu"), defaults to all
         """
         if keywords is None:
             keywords = KERNEL_KEYWORDS
         
         if sources is None:
-            sources = ["stackoverflow", "csdn"]
+            sources = ["stackoverflow", "csdn", "zhihu"]
 
         all_results = []
         for keyword in keywords:
@@ -173,23 +244,14 @@ class CaseAcquisition:
                 all_results.extend(so_results)
             
             if "csdn" in sources:
-                # Translate English keywords to Chinese for better CSDN results
-                csdn_keyword = keyword
-                if keyword == "kernel panic":
-                    csdn_keyword = "内核 panic"
-                elif keyword == "kernel oops":
-                    csdn_keyword = "内核 oops"
-                elif keyword == "kernel deadlock":
-                    csdn_keyword = "内核死锁"
-                elif keyword == "kernel null pointer dereference":
-                    csdn_keyword = "内核空指针"
-                elif keyword == "kernel OOM":
-                    csdn_keyword = "内核 OOM"
-                elif keyword == "kernel page allocation failure":
-                    csdn_keyword = "内核页分配失败"
-                
+                csdn_keyword = _to_cn_keyword(keyword)
                 csdn_results = self.acquire_from_csdn(csdn_keyword, count=max_per_keyword)
                 all_results.extend(csdn_results)
+
+            if "zhihu" in sources:
+                zhihu_keyword = _to_cn_keyword(keyword)
+                zhihu_results = self.acquire_from_zhihu(zhihu_keyword, count=max_per_keyword)
+                all_results.extend(zhihu_results)
 
         success_count = sum(1 for r in all_results if r.get("success"))
         print(f"\nAcquisition complete: {success_count}/{len(all_results)} cases stored successfully")

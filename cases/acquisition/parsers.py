@@ -309,3 +309,46 @@ class ForumParser(BaseParser):
             "related_code": "",
             "reference_url": "",
         }
+
+
+class ZhihuParser(BlogParser):
+    """Zhihu-specific parser with fallback to generic blog parser."""
+
+    def _extract_title(self, soup: BeautifulSoup) -> str:
+        selectors = [
+            "h1.Post-Title",
+            "h1.QuestionHeader-title",
+            "h1",
+            "title",
+        ]
+        for selector in selectors:
+            tag = soup.select_one(selector)
+            if tag and tag.get_text(strip=True):
+                return tag.get_text(strip=True)
+        return super()._extract_title(soup)
+
+    def _extract_body(self, soup: BeautifulSoup) -> str:
+        for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+            tag.decompose()
+
+        selectors = [
+            ".RichContent-inner",
+            ".Post-RichText",
+            ".QuestionAnswer-content",
+            ".QuestionRichText",
+            "article",
+            "main",
+        ]
+        for selector in selectors:
+            containers = soup.select(selector)
+            if not containers:
+                continue
+            text_blocks = []
+            for container in containers[:8]:
+                text = container.get_text(separator="\n", strip=True)
+                if len(text) > 40:
+                    text_blocks.append(text)
+            merged = "\n".join(text_blocks).strip()
+            if len(merged) > 100:
+                return merged
+        return super()._extract_body(soup)

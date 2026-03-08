@@ -5,7 +5,7 @@
 
 import json
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from bs4 import BeautifulSoup
 
 from .llm_integration import get_llm
@@ -35,7 +35,7 @@ class LLMParser:
     "confidence": 0.8
 }}
 
-要求：
+要求（必须严格执行）：
 1. phenomenon字段必须包含具体的问题描述，不能只是"见文章"之类的占位符
 2. key_logs字段要提取文章中提到的关键日志、错误信息或调用栈
 3. root_cause要详细说明问题的根本原因，不能只说"见文章"
@@ -44,6 +44,8 @@ class LLMParser:
 6. solution要提供具体的解决方案，不能只是"见文章"
 7. 如果文章内容不足或无法提取有效信息，confidence设为0.3以下
 8. 如果是高质量案例（问题清晰、分析详细、方案明确），confidence设为0.8以上
+9. 若某字段缺失，请填写"Not specified"，禁止使用"见文章/see article/参考原文"
+10. key_logs优先包含可定位问题的原始日志片段（如 panic/oops/Call Trace/寄存器或错误码）
 
 请只返回JSON，不要添加其他说明文字。"""
 
@@ -228,8 +230,92 @@ class LLMParser:
         # 设置默认confidence
         if "confidence" not in case_data:
             case_data["confidence"] = 0.5
+
+        # 规范文本、补齐关键日志，并输出字段完整性指标。
+        text_fields = [
+            "title", "phenomenon", "key_logs", "environment",
+            "root_cause", "analysis_process", "solution", "prevention"
+        ]
+        for field in text_fields:
+            if field in case_data and case_data[field] is not None:
+                case_data[field] = self._normalize_text(str(case_data[field]))
+
+        if not case_data.get("key_logs"):
+            case_data["key_logs"] = self._extract_key_logs_from_text(
+                f"{case_data.get('phenomenon', '')}\n{case_data.get('analysis_process', '')}\n{case_data.get('root_cause', '')}"
+            )
+
+        case_data["completeness_score"] = self._completeness_score(case_data)
+        case_data["low_quality_flags"] = self._low_quality_flags(case_data)
         
         return case_data
+
+    def _normalize_text(self, text: str) -> str:
+        text = re.sub(r"\s+\n", "\n", text).strip()
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        placeholders = [
+            r"^see article.*$",
+            r"^see .* for details.*$",
+            r"^见文章.*$",
+            r"^参考原文.*$",
+        ]
+        for pattern in placeholders:
+            if re.match(pattern, text, re.IGNORECASE):
+                return "Not specified"
+        return text
+
+    def _extract_key_logs_from_text(self, text: str) -> str:
+        if not text:
+            return ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        patterns = [
+            r"panic", r"oops", r"call trace", r"bug:", r"warning:",
+            r"null pointer", r"segfault", r"unable to handle", r"0x[0-9a-f]+",
+            r"\[\s*\d+\.\d+\]",
+        ]
+        matched = []
+        for line in lines:
+            lowered = line.lower()
+            if any(re.search(p, lowered, re.IGNORECASE) for p in patterns):
+                matched.append(line)
+            if len(matched) >= 6:
+                break
+        return "\n".join(matched)[:1200]
+
+    def _completeness_score(self, case_data: Dict) -> float:
+        weighted = {
+            "phenomenon": 0.25,
+            "key_logs": 0.2,
+            "analysis_process": 0.2,
+            "root_cause": 0.2,
+            "solution": 0.15,
+        }
+        score = 0.0
+        for field, weight in weighted.items():
+            value = str(case_data.get(field, "") or "")
+            if len(value) >= 40 and value != "Not specified":
+                score += weight * 100
+            elif len(value) >= 15 and value != "Not specified":
+                score += weight * 60
+        return round(score, 1)
+
+    def _low_quality_flags(self, case_data: Dict) -> List[str]:
+        flags = []
+        for field in ["phenomenon", "root_cause", "solution"]:
+            value = str(case_data.get(field, "") or "")
+            if len(value) < 30 or value == "Not specified":
+                flags.append(f"{field}_too_short_or_missing")
+
+        if len(str(case_data.get("key_logs", "") or "")) < 30:
+            flags.append("key_logs_missing")
+        if len(str(case_data.get("analysis_process", "") or "")) < 40:
+            flags.append("analysis_process_missing")
+
+        confidence = float(case_data.get("confidence", 0.5) or 0.5)
+        if confidence < 0.4:
+            flags.append("low_confidence")
+
+        return flags
     
     def check_quality(self, case_data: Dict) -> Dict:
         """
@@ -306,7 +392,9 @@ class LLMParser:
             "phenomenon_quality": "good" if len(phenomenon) >= 100 else "medium" if len(phenomenon) >= 50 else "poor",
             "solution_quality": "good" if len(solution) >= 100 else "medium" if len(solution) >= 50 else "poor",
             "issues": issues,
-            "suggestions": []
+            "suggestions": [],
+            "completeness_score": case_data.get("completeness_score", self._completeness_score(case_data)),
+            "low_quality_flags": case_data.get("low_quality_flags", self._low_quality_flags(case_data)),
         }
 
 

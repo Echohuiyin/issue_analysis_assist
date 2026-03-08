@@ -1,6 +1,6 @@
 # Core components that don't depend on Django
-from .fetchers import BaseFetcher, HTTPFetcher, APIFetcher, RSSFetcher, StackOverflowFetcher, CSDNFetcher
-from .parsers import BaseParser, BlogParser, ForumParser
+from .fetchers import BaseFetcher, HTTPFetcher, APIFetcher, RSSFetcher, StackOverflowFetcher, CSDNFetcher, ZhihuFetcher
+from .parsers import BaseParser, BlogParser, ForumParser, ZhihuParser
 from .validators import CaseValidator, case_validator
 from .cleaner import ContentCleaner, content_cleaner
 from .classifier import ModuleClassifier, module_classifier
@@ -25,9 +25,11 @@ __all__ = [
     "RSSFetcher",
     "StackOverflowFetcher",
     "CSDNFetcher",
+    "ZhihuFetcher",
     "BaseParser",
     "BlogParser",
     "ForumParser",
+    "ZhihuParser",
     "CaseValidator",
     "case_validator",
     "ContentCleaner",

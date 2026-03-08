@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 
 from .fetchers import HTTPFetcher, StackOverflowFetcher, CSDNFetcher, ZhihuFetcher
 from .parsers import BlogParser, ForumParser, ZhihuParser
+from .llm_parser import LLMParser
 from .validators import CaseValidator
 from .storage import CaseStorage
 from .cleaner import content_cleaner
@@ -18,6 +19,7 @@ KERNEL_KEYWORDS = [
     "kernel OOM",
     "kernel page allocation failure",
 ]
+QUALITY_THRESHOLD = 80.0
 
 
 def _to_cn_keyword(keyword: str) -> str:
@@ -40,6 +42,7 @@ class CaseAcquisition:
         self.zhihu_fetcher = ZhihuFetcher()
         self.validators = CaseValidator()
         self.storage = CaseStorage()
+        self.llm_parser = LLMParser(llm_type="auto")
 
         # Register parsers for different content types
         self.parsers = {
@@ -73,9 +76,14 @@ class CaseAcquisition:
                 "message": f"Failed to fetch content from {url}"
             }
 
-        # Parse content
-        parser = self.parsers.get(content_type, BlogParser())
-        parsed_data = parser.parse(content)
+        # Parse content with local LLM first, then fallback to source parser.
+        parsed_data = None
+        if content_type in ("blog", "zhihu"):
+            parsed_data = self.llm_parser.parse(content, use_llm=True)
+
+        if not parsed_data:
+            parser = self.parsers.get(content_type, BlogParser())
+            parsed_data = parser.parse(content)
         if not parsed_data:
             return {
                 "success": False,
@@ -124,6 +132,15 @@ class CaseAcquisition:
                 "errors": validation_result["errors"],
                 "warnings": validation_result.get("warnings", []),
                 "quality_score": validation_result.get("quality_score", 0)
+            }
+
+        if float(validation_result.get("quality_score", 0) or 0) < QUALITY_THRESHOLD:
+            return {
+                "success": False,
+                "message": f"Case discarded due to low quality score (<{QUALITY_THRESHOLD})",
+                "warnings": validation_result.get("warnings", []),
+                "quality_score": validation_result.get("quality_score", 0),
+                "low_quality_flags": validation_result.get("low_quality_flags", []),
             }
         
         # Log quality score and warnings even if validation passes

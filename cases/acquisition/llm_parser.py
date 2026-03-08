@@ -24,13 +24,16 @@ class LLMParser:
 
 {{
     "title": "问题标题（简洁明确，包含关键问题）",
+    "module": "所属内核模块（memory/network/scheduler/lock/timer/storage/irq/driver/other）",
     "phenomenon": "问题现象描述（包括：具体症状、错误信息、关键日志片段）",
     "key_logs": "关键日志或错误信息（如果有）",
     "environment": "环境信息（内核版本、系统版本、硬件平台等）",
     "root_cause": "根本原因分析（详细说明导致问题的根本原因）",
     "analysis_process": "问题分析思路和过程（如何定位到问题）",
+    "related_code": "关联内核代码（函数、调用链、关键代码片段）",
     "troubleshooting_steps": ["排查步骤1", "排查步骤2", "..."],
     "solution": "解决方案（具体的修复方法、代码修改或配置调整）",
+    "fix_code": "修复代码（若文章中提供了补丁/代码修改，尽量完整摘录）",
     "prevention": "预防措施（如果文章中有提到）",
     "confidence": 0.8
 }}
@@ -46,6 +49,8 @@ class LLMParser:
 8. 如果是高质量案例（问题清晰、分析详细、方案明确），confidence设为0.8以上
 9. 若某字段缺失，请填写"Not specified"，禁止使用"见文章/see article/参考原文"
 10. key_logs优先包含可定位问题的原始日志片段（如 panic/oops/Call Trace/寄存器或错误码）
+11. related_code尽量提取函数名、调用链、关键代码，若无则填"Not specified"
+12. fix_code仅在有明确修复片段时填写，否则填"Not specified"
 
 请只返回JSON，不要添加其他说明文字。"""
 
@@ -175,11 +180,15 @@ class LLMParser:
         # 简单提取（这里可以使用原有的BlogParser逻辑）
         return {
             "title": title[:200],
+            "module": "other",
             "phenomenon": text_content[:500],
             "environment": "Not specified",
-            "root_cause": "See article for details",
-            "troubleshooting_steps": ["See article for details"],
-            "solution": "See article for details",
+            "root_cause": "Not specified",
+            "analysis_process": "Not specified",
+            "related_code": "Not specified",
+            "troubleshooting_steps": ["Not specified"],
+            "solution": "Not specified",
+            "fix_code": "Not specified",
             "confidence": 0.3
         }
     
@@ -203,7 +212,7 @@ class LLMParser:
     def _validate_and_clean(self, case_data: Dict) -> Dict:
         """验证和清理案例数据"""
         # 确保必要字段存在
-        required_fields = ["title", "phenomenon", "root_cause", "solution"]
+        required_fields = ["title", "module", "phenomenon", "root_cause", "analysis_process", "solution"]
         for field in required_fields:
             if field not in case_data:
                 case_data[field] = f"Not specified"
@@ -233,12 +242,15 @@ class LLMParser:
 
         # 规范文本、补齐关键日志，并输出字段完整性指标。
         text_fields = [
-            "title", "phenomenon", "key_logs", "environment",
-            "root_cause", "analysis_process", "solution", "prevention"
+            "title", "module", "phenomenon", "key_logs", "environment",
+            "root_cause", "analysis_process", "related_code", "solution", "fix_code", "prevention"
         ]
         for field in text_fields:
             if field in case_data and case_data[field] is not None:
                 case_data[field] = self._normalize_text(str(case_data[field]))
+
+        # Persist analysis alias for storage and downstream retrieval.
+        case_data["problem_analysis"] = case_data.get("analysis_process", "Not specified")
 
         if not case_data.get("key_logs"):
             case_data["key_logs"] = self._extract_key_logs_from_text(

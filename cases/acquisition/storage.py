@@ -5,6 +5,7 @@ import uuid
 # Import the module classifier
 from .classifier import module_classifier
 from .cleaner import content_cleaner
+from cases.rag import get_local_vector_store
 
 # Add Django imports only if Django is available
 try:
@@ -132,6 +133,24 @@ class CaseStorage:
             )
 
             case.save()
+
+            # Update local RAG vector store after DB commit.
+            # This path is best-effort and must not break DB write success.
+            try:
+                vector_store = get_local_vector_store()
+                vector_store.upsert_case(case_id, {
+                    "title": str(getattr(case, "title", case_data.get("title", ""))),
+                    "module": str(getattr(case, "module", case_data.get("module", "other"))),
+                    "phenomenon": case_data.get("phenomenon", ""),
+                    "problem_analysis": case_data.get("problem_analysis", case_data.get("analysis_process", "")),
+                    "related_code": case_data.get("related_code", ""),
+                    "root_cause": str(getattr(case, "root_cause", case_data.get("root_cause", ""))),
+                    "solution": str(getattr(case, "solution", case_data.get("solution", ""))),
+                    "source": str(getattr(case, "source", case_data.get("source", ""))),
+                    "reference_url": ref_url,
+                })
+            except Exception as rag_error:
+                print(f"Warning: RAG vector upsert failed for {case_id}: {rag_error}")
 
             return {
                 "success": True,

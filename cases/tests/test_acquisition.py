@@ -655,3 +655,31 @@ class TestCaseAcquisitionPerformance(TestCase):
         self.assertEqual(len(results), 12)
         self.assertTrue(all(item.get("success") for item in results))
         self.assertEqual(results[0]["source_url"], "https://example.com/0")
+
+
+class TestCaseAcquisitionQualityGate(TestCase):
+    def test_discard_low_quality_case(self):
+        from cases.acquisition.main import CaseAcquisition
+
+        acquisition = CaseAcquisition()
+        acquisition.fetcher.fetch = MagicMock(return_value="<html><body><h1>T</h1><article>mock content</article></body></html>")
+        acquisition.llm_parser.parse = MagicMock(return_value={
+            "title": "Kernel issue",
+            "module": "driver",
+            "phenomenon": "short",
+            "environment": "Linux",
+            "root_cause": "short",
+            "analysis_process": "short",
+            "solution": "short",
+            "troubleshooting_steps": ["s1"],
+        })
+        acquisition.validators.validate = MagicMock(return_value={
+            "is_valid": True,
+            "quality_score": 75,
+            "warnings": ["low quality"],
+            "low_quality_flags": ["phenomenon_incomplete"],
+        })
+
+        result = acquisition.acquire_case("https://example.com/test", content_type="blog", source="mock")
+        self.assertFalse(result["success"])
+        self.assertIn("low quality score", result["message"])

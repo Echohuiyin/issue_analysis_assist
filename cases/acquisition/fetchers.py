@@ -1,7 +1,10 @@
 import requests
 import json
 import re
+import time
+import random
 from abc import ABC, abstractmethod
+from urllib.parse import quote_plus
 
 
 class BaseFetcher(ABC):
@@ -19,17 +22,65 @@ class HTTPFetcher(BaseFetcher):
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     }
 
-    def __init__(self, timeout: int = 10, headers: dict = None):
+    def __init__(
+        self,
+        timeout: int = 10,
+        headers: dict = None,
+        min_interval: float = 0.4,
+        max_retries: int = 2,
+        backoff_base: float = 0.8,
+        cache_ttl: int = 300
+    ):
         self.timeout = timeout
         self.headers = headers or self.DEFAULT_HEADERS.copy()
+        self.min_interval = max(0.0, min_interval)
+        self.max_retries = max(0, max_retries)
+        self.backoff_base = max(0.1, backoff_base)
+        self.cache_ttl = max(0, cache_ttl)
+        self._last_request_at = 0.0
+        self._cache = {}
+
+    def _sleep_for_rate_limit(self):
+        elapsed = time.monotonic() - self._last_request_at
+        wait_time = self.min_interval - elapsed
+        if wait_time > 0:
+            time.sleep(wait_time)
+
+    def _with_retry_get(self, url: str, **kwargs):
+        for attempt in range(self.max_retries + 1):
+            self._sleep_for_rate_limit()
+            self._last_request_at = time.monotonic()
+            try:
+                response = requests.get(url, timeout=self.timeout, **kwargs)
+                if response.status_code == 429 and attempt < self.max_retries:
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after and retry_after.isdigit():
+                        time.sleep(float(retry_after))
+                    else:
+                        delay = self.backoff_base * (2 ** attempt) + random.uniform(0, 0.2)
+                        time.sleep(delay)
+                    continue
+                response.raise_for_status()
+                return response
+            except Exception:
+                if attempt >= self.max_retries:
+                    raise
+                delay = self.backoff_base * (2 ** attempt) + random.uniform(0, 0.2)
+                time.sleep(delay)
+        return None
 
     def fetch(self, url: str) -> str:
         """Fetch content from the given URL using HTTP GET"""
+        cached = self._cache.get(url)
+        if cached and time.time() - cached["ts"] <= self.cache_ttl:
+            return cached["value"]
         try:
-            response = requests.get(url, headers=self.headers, timeout=self.timeout)
-            response.raise_for_status()
+            response = self._with_retry_get(url, headers=self.headers)
             response.encoding = response.apparent_encoding
-            return response.text
+            text = response.text
+            if self.cache_ttl > 0:
+                self._cache[url] = {"ts": time.time(), "value": text}
+            return text
         except Exception as e:
             print(f"Error fetching {url}: {e}")
             return None
@@ -182,8 +233,7 @@ class CSDNFetcher(HTTPFetcher):
             }
 
             # 使用CSDN的API接口而不是HTML页面
-            response = requests.get(self.CSDN_SEARCH_API, params=params, headers=self.headers, timeout=self.timeout)
-            response.raise_for_status()
+            response = self._with_retry_get(self.CSDN_SEARCH_API, params=params, headers=self.headers)
             data = response.json()
 
             article_urls = []
@@ -214,8 +264,7 @@ class CSDNFetcher(HTTPFetcher):
             "p": 1,
         }
         
-        response = requests.get(CSDN_FALLBACK_URL, params=params, headers=self.headers, timeout=self.timeout)
-        response.raise_for_status()
+        response = self._with_retry_get(CSDN_FALLBACK_URL, params=params, headers=self.headers)
         html = response.text
         
         # 尝试从HTML中提取URL，作为备选方案
@@ -231,3 +280,60 @@ class CSDNFetcher(HTTPFetcher):
         Returns HTML content of the article.
         """
         return super().fetch(url)
+
+
+class ZhihuFetcher(HTTPFetcher):
+    """Fetcher for Zhihu content with API + HTML fallback."""
+
+    ZHIHU_SEARCH_API = "https://www.zhihu.com/api/v4/search_v3"
+    ZHIHU_SEARCH_FALLBACK = "https://www.zhihu.com/search?type=content&q={query}"
+
+    def __init__(self, timeout: int = 10):
+        headers = HTTPFetcher.DEFAULT_HEADERS.copy()
+        headers.update({
+            "Referer": "https://www.zhihu.com/",
+            "Accept": "application/json,text/plain,*/*",
+        })
+        super().__init__(timeout=timeout, headers=headers, min_interval=1.0, max_retries=3, backoff_base=1.0, cache_ttl=300)
+
+    def search(self, keyword: str, count: int = 5) -> list:
+        try:
+            params = {
+                "gk_version": "gz-gaokao",
+                "t": "general",
+                "q": keyword,
+                "correction": 1,
+                "offset": 0,
+                "limit": min(max(count * 2, 10), 20),
+            }
+            response = self._with_retry_get(self.ZHIHU_SEARCH_API, params=params, headers=self.headers)
+            data = response.json()
+            urls = []
+            for item in data.get("data", []):
+                obj = item.get("object", {})
+                candidate = obj.get("url") or obj.get("url_token")
+                if not candidate:
+                    continue
+                if candidate.startswith("/"):
+                    candidate = f"https://www.zhihu.com{candidate}"
+                if "zhihu.com/question/" in candidate or "zhuanlan.zhihu.com/p/" in candidate:
+                    urls.append(candidate)
+            return list(dict.fromkeys(urls))[:count]
+        except Exception as e:
+            print(f"Error searching Zhihu API: {e}")
+            try:
+                return self._search_fallback(keyword, count)
+            except Exception as fallback_e:
+                print(f"Zhihu fallback search also failed: {fallback_e}")
+                return []
+
+    def _search_fallback(self, keyword: str, count: int = 5) -> list:
+        url = self.ZHIHU_SEARCH_FALLBACK.format(query=quote_plus(keyword))
+        html = self.fetch(url)
+        if not html:
+            return []
+
+        question_urls = re.findall(r'https://www\.zhihu\.com/question/\d+(?:/\d+)?', html)
+        article_urls = re.findall(r'https://zhuanlan\.zhihu\.com/p/\d+', html)
+        combined = list(dict.fromkeys(question_urls + article_urls))
+        return combined[:count]

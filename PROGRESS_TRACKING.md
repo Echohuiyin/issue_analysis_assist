@@ -908,6 +908,77 @@ export VLLM_CPU_THREADS=4
    - 问题：国内下载模型较慢
    - 解决方案：使用镜像站点或手动下载
 
+## V2.5 开发计划（2026-03-08）
+
+### 目标
+在 V2.4 基础上推进下一阶段可执行开发，优先补齐以下缺口：
+- 本地 LLM 真实部署验证
+- 数据源扩展
+- 结构化提取质量提升
+- 采集与解析链路性能加固
+
+### 范围基线（来自当前文档）
+- 进度基线：`PROGRESS_TRACKING.md` 当前版本 V2.4，整体完成度约 85%
+- 功能基线：`Requirement_Design_Docs.md`（案例质量、分析能力、性能目标）
+- 架构基线：`Develop_Design_Docs.md`（模块边界与数据流）
+- 验证基线：`Test_Design_Docs.md`（单元/集成/E2E/性能/效果指标）
+
+### 分阶段执行清单
+
+#### Phase A（Week 1）本地 LLM 生产验证（P0）
+- [ ] 在 Windows 上确定一个稳定本地推理栈（默认 `Ollama + Qwen`，保留回退方案）
+- [ ] 打通真实案例解析/分析端到端流程并留档
+- [ ] 建立基线指标：单案例延迟、解析置信度分布、字段完整率
+- [ ] 在进度文档补充可复现 runbook 与基准记录
+
+主要更新文件：
+- `cases/acquisition/llm_integration.py`
+- `cases/acquisition/llm_parser.py`
+- `test_local_llm.py`
+- `PROGRESS_TRACKING.md`
+
+#### Phase B（Week 1-2）数据源扩展（P1）
+- [ ] 新增至少 1 个高价值数据源（优先知乎），包含限流和解析回退策略
+- [ ] 将 source adapter 统一到标准接口：`fetch -> parse -> clean -> classify -> validate -> store`
+- [ ] 增加来源级防回归测试（基于 mock HTML/API）
+
+主要更新文件：
+- `cases/acquisition/fetchers.py`
+- `cases/acquisition/parsers.py`
+- `cases/acquisition/main.py`
+- `cases/tests/test_acquisition.py`
+
+#### Phase C（Week 2）提取质量升级（P1）
+- [ ] 优化 `phenomenon / key_logs / analysis_process / root_cause / solution` 的提示词与后处理
+- [ ] 增加字段级完整性校验与低质量自动标记策略
+- [ ] 建立小规模标注集，量化优化前后差异
+
+主要更新文件：
+- `cases/acquisition/llm_parser.py`
+- `cases/acquisition/validators.py`
+- `test_llm_parser.py`
+
+#### Phase D（Week 3）性能与吞吐优化（P2）
+- [ ] 在采集/解析链路加入批处理与有界并发
+- [ ] 增加缓存、重试、退避，降低重复抓取与解析失败率
+- [ ] 建立统一吞吐量与错误率趋势报告格式
+
+主要更新文件：
+- `cases/acquisition/main.py`
+- `cases/acquisition/fetchers.py`
+- `verify_phase1.py`
+
+### 验收门槛（全部通过后方可标记完成）
+- [ ] 采集与 LLM 解析路径的单元测试和集成测试全部通过
+- [ ] 新增数据源测试稳定通过，且 StackOverflow/CSDN 无回归
+- [ ] 本地 LLM E2E 执行完成，步骤可复现、指标可度量
+- [ ] 进度文档更新完整：完成项、指标快照、已知风险、下阶段待办
+
+### 风险与缓解
+- Windows 本地推理不稳定：默认 Ollama 路径并维护回退配置
+- 来源 HTML 波动：分层回退解析 + 快照回归测试
+- 质量指标漂移：固定小标注集并周期性回归基准
+
 ### 联系方式
 
 - 项目路径：`d:\develop\08_database`
@@ -916,6 +987,6 @@ export VLLM_CPU_THREADS=4
 
 ---
 
-**最后更新时间**：2026-03-06  
-**项目版本**：V2.4  
+**最后更新时间**：2026-03-08  
+**项目版本**：V2.4（V2.5 规划中）  
 **整体完成度**：85%

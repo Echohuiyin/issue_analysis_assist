@@ -36,7 +36,7 @@ class VectorService:
                         "model": self.model,
                         "prompt": text
                     },
-                    timeout=10
+                    timeout=30
                 )
                 if response.status_code == 200:
                     embedding = response.json()["embedding"]

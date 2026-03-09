@@ -837,6 +837,55 @@ export VLLM_CPU_THREADS=4
 - 文档路径：项目根目录
 - 测试脚本：`test_local_llm.py`, `verify_phase1.py`
 
+### V2.7 RAG功能实现（2026-03-07）
+
+**改进内容**：实现了基于RAG（Retrieval-Augmented Generation）的内核问题自动分析功能，通过向量嵌入和相似案例检索提升分析质量
+
+**关键实现**：
+
+1. **向量嵌入系统**：
+   - 新增`cases/acquisition/vector_service.py` - 向量服务模块
+   - 使用Ollama本地模型生成文本嵌入
+   - 支持cosine相似度计算
+   - 实现高效的相似案例检索
+
+2. **RAG集成**：
+   - 更新`cases/models.py` - 添加`embedding`字段存储向量表示
+   - 修改`cases/acquisition/storage.py` - 存储案例时自动生成嵌入
+   - 增强`cases/analysis/issue_analyzer.py` - 分析时检索相似案例
+   - 更新`cases/acquisition/__init__.py` - 导出向量服务组件
+
+3. **数据库迁移**：
+   - 生成并应用数据库迁移：`0003_kernelcase_embedding.py`
+   - 支持已有案例的嵌入生成
+
+**RAG工作流程**：
+1. 案例存储时自动生成文本嵌入
+2. 问题分析时生成用户查询的嵌入
+3. 计算相似度并检索最相关的案例
+4. 将相似案例信息整合到分析结果中
+
+**使用方法**：
+```python
+from cases.analysis.issue_analyzer import IssueAnalyzer
+
+# 自动使用RAG功能
+analyzer = IssueAnalyzer()
+result = analyzer.analyze(issue_description)
+# 结果包含相似案例信息
+```
+
+**测试验证**：
+- 创建`test_rag_workflow.py` - 完整的RAG流程测试
+- 验证嵌入生成和相似度检索功能
+- 测试相似案例整合到分析结果
+
+**改进效果**：
+- 提升了问题分析的准确性
+- 提供了相似案例的参考信息
+- 增强了分析结果的可解释性
+- 减少了重复问题的分析时间
+
 ### V2.8 提取提示词优化（2026-03-07）
 
 **改进内容**：优化了LLM提取提示词，提高了结构化案例信息的提取质量和JSON格式的正确性

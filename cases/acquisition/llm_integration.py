@@ -507,44 +507,56 @@ class LLMFactory:
             LLM实例
         """
         if llm_type == "auto":
+            # 可复现本地运行路径：优先读取环境变量配置。
+            # LOCAL_LLM_PROFILE=ollama_qwen / vllm_qwen / qwen_hf / chatglm_hf / cloud
+            profile = os.getenv("LOCAL_LLM_PROFILE", "ollama_qwen").strip().lower()
+
+            ollama_kwargs = {
+                "model": kwargs.get("model", os.getenv("OLLAMA_MODEL", "qwen:1.8b")),
+                "base_url": kwargs.get("base_url", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")),
+            }
+            vllm_kwargs = {
+                "model_name": kwargs.get("model_name", os.getenv("VLLM_MODEL_NAME", "Qwen/Qwen1.5-1.8B-Chat")),
+                "device": kwargs.get("device", os.getenv("VLLM_DEVICE", "cpu")),
+            }
+            qwen_kwargs = {
+                "model_name": kwargs.get("model_name", os.getenv("QWEN_MODEL_NAME", "Qwen/Qwen1.5-1.8B-Chat")),
+                "device": kwargs.get("device", os.getenv("QWEN_DEVICE", "auto")),
+            }
+            chatglm_kwargs = {
+                "model_name": kwargs.get("model_name", os.getenv("CHATGLM_MODEL_NAME", "THUDM/chatglm3-6b")),
+                "device": kwargs.get("device", os.getenv("CHATGLM_DEVICE", "auto")),
+            }
+
+            if profile == "vllm_qwen":
+                order = ["vllm", "ollama", "qwen", "chatglm", "deepseek", "openai"]
+            elif profile == "qwen_hf":
+                order = ["qwen", "ollama", "vllm", "chatglm", "deepseek", "openai"]
+            elif profile == "chatglm_hf":
+                order = ["chatglm", "ollama", "vllm", "qwen", "deepseek", "openai"]
+            elif profile == "cloud":
+                order = ["deepseek", "openai", "ollama", "vllm", "qwen", "chatglm"]
+            else:
+                order = ["ollama", "vllm", "qwen", "chatglm", "deepseek", "openai"]
+
+            constructors = {
+                "ollama": lambda: OllamaLLM(**ollama_kwargs),
+                "vllm": lambda: VLLMLocalLLM(**vllm_kwargs),
+                "qwen": lambda: QwenLocalLLM(**qwen_kwargs),
+                "chatglm": lambda: ChatGLMLocalLLM(**chatglm_kwargs),
+                "deepseek": lambda: DeepSeekLLM(api_key=kwargs.get("api_key"), model=kwargs.get("model", "deepseek-chat")),
+                "openai": lambda: OpenAILLM(api_key=kwargs.get("api_key"), model=kwargs.get("model", "gpt-3.5-turbo"), base_url=kwargs.get("base_url")),
+            }
+
             # 自动选择：优先本地免费模型
-            # 1. 优先尝试Ollama（最简单，推荐）
-            ollama = OllamaLLM(**kwargs)
-            if ollama.is_available():
-                print(f"✓ 使用Ollama本地模型: {ollama.model}")
-                return ollama
-            
-            # 2. 尝试vLLM（高性能）
-            vllm = VLLMLocalLLM(**kwargs)
-            if vllm.is_available():
-                print("✓ 使用vLLM本地模型")
-                return vllm
-            
-            # 3. 尝试Qwen本地模型
-            qwen = QwenLocalLLM(**kwargs)
-            if qwen.is_available():
-                print("✓ 使用Qwen本地模型")
-                return qwen
-            
-            # 4. 尝试ChatGLM本地模型
-            chatglm = ChatGLMLocalLLM(**kwargs)
-            if chatglm.is_available():
-                print("✓ 使用ChatGLM本地模型")
-                return chatglm
-            
-            # 5. 最后尝试云端API（付费）
-            deepseek = DeepSeekLLM(**kwargs)
-            if deepseek.is_available():
-                print("✓ 使用DeepSeek API（付费）")
-                return deepseek
-            
-            openai_llm = OpenAILLM(**kwargs)
-            if openai_llm.is_available():
-                print("✓ 使用OpenAI API（付费）")
-                return openai_llm
+            for backend in order:
+                candidate = constructors[backend]()
+                if candidate.is_available():
+                    print(f"[OK] 使用{candidate.__class__.__name__} ({backend})")
+                    return candidate
             
             # 6. 如果都没有，使用Mock
-            print("⚠ 警告: 没有可用的LLM，使用Mock模式")
+            print("[WARN] 警告: 没有可用的LLM，使用Mock模式")
             print("\n推荐安装方式:")
             print("  方式1（推荐）: 安装Ollama并下载模型")
             print("    1. 访问 https://ollama.ai/ 下载安装Ollama")
@@ -554,6 +566,7 @@ class LLMFactory:
             print("    pip install vllm")
             print("  方式3: 安装Transformers")
             print("    pip install transformers torch accelerate")
+            print("  方式4: 通过 LOCAL_LLM_PROFILE 指定运行路径（可复现）")
             return MockLLM()
         
         elif llm_type == "ollama":

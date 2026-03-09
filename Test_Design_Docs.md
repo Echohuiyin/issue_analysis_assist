@@ -564,3 +564,188 @@ MOCK_LLM_RESPONSE = {
 鏃ュ織/鎴浘: 
 褰卞搷璇勪及: 
 ```
+
+---
+
+## 10. V2.8新增测试用例（三表架构）
+
+### 10.1 数据库模型测试
+
+#### 10.1.1 RawCase模型测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-RawCase-001 | 创建原始案例 | 创建包含完整字段的RawCase | 成功创建，自动生成ID | P0 |
+| TC-RawCase-002 | 顺序存储验证 | 创建多个RawCase，验证ID顺序 | ID按创建顺序递增 | P0 |
+| TC-RawCase-003 | 标记已处理 | 将processed字段设为True | 成功更新，processed_at自动设置 | P0 |
+| TC-RawCase-004 | URL去重 | 创建相同URL的RawCase | 第二次创建被拒绝或跳过 | P1 |
+| TC-RawCase-005 | 空内容处理 | 创建raw_content为空的RawCase | 根据验证规则处理 | P1 |
+
+#### 10.1.2 TrainingCase模型测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Training-001 | 创建训练案例 | 创建包含完整字段的TrainingCase | 成功创建，自动生成ID | P0 |
+| TC-Training-002 | 关联原始案例 | 创建TrainingCase并关联RawCase | 外键关系正确建立 | P0 |
+| TC-Training-003 | 顺序存储验证 | 创建多个TrainingCase，验证ID顺序 | ID按创建顺序递增 | P0 |
+| TC-Training-004 | 质量分数范围 | 设置quality_score为各种值 | 正确存储0-100范围内的值 | P1 |
+| TC-Training-005 | 模块分类 | 设置不同module值 | 正确存储并显示模块名称 | P1 |
+
+#### 10.1.3 TestCase模型测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Test-001 | 创建测试案例 | 创建包含完整字段的TestCase | 成功创建，自动生成ID | P0 |
+| TC-Test-002 | 关联原始案例 | 创建TestCase并关联RawCase | 外键关系正确建立 | P0 |
+| TC-Test-003 | 顺序存储验证 | 创建多个TestCase，验证ID顺序 | ID按创建顺序递增 | P0 |
+| TC-Test-004 | 字段完整性 | 验证所有必需字段 | 缺少必需字段时报错 | P1 |
+
+### 10.2 后台爬取工具测试
+
+#### 10.2.1 BackgroundCrawler功能测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Crawler-001 | 初始化配置 | 使用默认参数初始化 | 正确设置target_count=2000 | P0 |
+| TC-Crawler-002 | 保存原始案例 | 调用save_raw_case方法 | 成功保存到RawCase表 | P0 |
+| TC-Crawler-003 | URL去重检测 | 保存相同URL的案例 | 返回False，不重复保存 | P0 |
+| TC-Crawler-004 | 获取当前数量 | 调用get_current_count方法 | 返回正确的RawCase数量 | P1 |
+| TC-Crawler-005 | 爬取StackOverflow | 调用crawl_stackoverflow方法 | 成功爬取并保存案例 | P0 |
+| TC-Crawler-006 | 爬取CSDN | 调用crawl_csdn方法 | 成功爬取并保存案例 | P0 |
+| TC-Crawler-007 | 爬取知乎 | 调用crawl_zhihu方法 | 成功爬取并保存案例 | P1 |
+| TC-Crawler-008 | 单次运行 | 使用--once参数运行 | 只运行一轮后退出 | P1 |
+| TC-Crawler-009 | 达到目标数量 | 当案例数达到target_count | 自动停止爬取 | P0 |
+| TC-Crawler-010 | 优雅退出 | 发送SIGINT信号 | 正确处理信号并退出 | P1 |
+
+#### 10.2.2 爬虫异常处理测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Crawler-Err-001 | 网络异常 | 模拟网络请求失败 | 记录错误日志，继续运行 | P0 |
+| TC-Crawler-Err-002 | 超时处理 | 模拟请求超时 | 记录错误，重试或跳过 | P1 |
+| TC-Crawler-Err-003 | 空内容处理 | 爬取到空内容 | 跳过，不保存 | P1 |
+| TC-Crawler-Err-004 | 数据库异常 | 模拟数据库写入失败 | 记录错误，继续运行 | P1 |
+
+### 10.3 案例处理脚本测试
+
+#### 10.3.1 CaseProcessor功能测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Processor-001 | 初始化配置 | 使用默认参数初始化 | 正确设置quality_threshold=75 | P0 |
+| TC-Processor-002 | 获取未处理案例 | 调用get_unprocessed_cases方法 | 返回processed=False的RawCase | P0 |
+| TC-Processor-003 | 解析原始案例 | 调用parse_raw_case方法 | 返回结构化的案例数据 | P0 |
+| TC-Processor-004 | 验证案例质量 | 调用validate_case方法 | 返回质量分数和验证结果 | P0 |
+| TC-Processor-005 | 保存到训练集 | 调用save_to_dataset(is_test=False) | 成功保存到TrainingCase表 | P0 |
+| TC-Processor-006 | 保存到测试集 | 调用save_to_dataset(is_test=True) | 成功保存到TestCase表 | P0 |
+| TC-Processor-007 | 标记已处理 | 调用mark_as_processed方法 | RawCase.processed设为True | P0 |
+| TC-Processor-008 | 质量过滤 | 处理质量分数<阈值的案例 | 不保存到训练集/测试集 | P0 |
+| TC-Processor-009 | 批量处理 | 调用process_batch方法 | 正确处理一批案例 | P1 |
+| TC-Processor-010 | 训练集/测试集划分 | 处理多个案例 | 按比例正确划分 | P1 |
+
+#### 10.3.2 处理异常测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Processor-Err-001 | LLM不可用 | LLM服务不可用 | 降级到规则解析或跳过 | P0 |
+| TC-Processor-Err-002 | 解析失败 | LLM返回无效数据 | 记录错误，标记为已处理 | P1 |
+| TC-Processor-Err-003 | 数据库异常 | 模拟数据库写入失败 | 记录错误，继续处理下一个 | P1 |
+
+### 10.4 集成测试
+
+#### 10.4.1 完整流程测试
+| 测试ID | 测试项 | 测试步骤 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Integration-001 | 爬取到存储完整流程 | 1. 启动爬取工具<br>2. 爬取案例<br>3. 验证RawCase表 | RawCase表有新数据 | P0 |
+| TC-Integration-002 | 处理到训练集流程 | 1. 运行处理脚本<br>2. LLM解析<br>3. 质量过滤<br>4. 验证TrainingCase表 | TrainingCase表有高质量案例 | P0 |
+| TC-Integration-003 | 处理到测试集流程 | 1. 运行处理脚本<br>2. 验证TestCase表 | TestCase表有测试案例 | P0 |
+| TC-Integration-004 | 端到端流程 | 1. 爬取原始案例<br>2. 处理案例<br>3. 验证训练集和测试集 | 完整流程正常工作 | P0 |
+
+#### 10.4.2 数据一致性测试
+| 测试ID | 测试项 | 测试内容 | 预期结果 | 优先级 |
+|--------|--------|----------|----------|--------|
+| TC-Consistency-001 | 外键关系 | TrainingCase.raw_case指向RawCase | 外键关系正确 | P0 |
+| TC-Consistency-002 | 处理状态同步 | 处理后RawCase.processed=True | 状态正确更新 | P0 |
+| TC-Consistency-003 | 数据完整性 | 训练集案例字段完整 | 所有必需字段都有值 | P1 |
+
+### 10.5 性能测试
+
+#### 10.5.1 爬取性能测试
+| 测试ID | 测试项 | 测试内容 | 目标值 | 优先级 |
+|--------|--------|----------|--------|--------|
+| TC-Perf-Crawler-001 | 单次爬取速度 | 爬取10个案例的时间 | < 2分钟 | P1 |
+| TC-Perf-Crawler-002 | 24小时爬取量 | 连续运行24小时爬取数量 | >= 500个 | P2 |
+| TC-Perf-Crawler-003 | 内存占用 | 长时间运行内存占用 | < 500MB | P2 |
+
+#### 10.5.2 处理性能测试
+| 测试ID | 测试项 | 测试内容 | 目标值 | 优先级 |
+|--------|--------|----------|--------|--------|
+| TC-Perf-Processor-001 | 单案例处理时间 | LLM解析+验证+存储 | < 10秒 | P1 |
+| TC-Perf-Processor-002 | 批量处理吞吐量 | 处理100个案例的时间 | < 20分钟 | P2 |
+| TC-Perf-Processor-003 | 内存占用 | 批量处理内存占用 | < 1GB | P2 |
+
+### 10.6 测试代码示例
+
+`python
+# cases/tests/test_new_models.py
+
+from django.test import TestCase
+from cases.models import RawCase, TrainingCase, TestCase
+
+class TestRawCase(TestCase):
+    def test_create_raw_case(self):
+        raw_case = RawCase.objects.create(
+            raw_content='<html>Test content</html>',
+            source='stackoverflow',
+            source_url='https://stackoverflow.com/questions/12345',
+            source_id='12345'
+        )
+        self.assertEqual(raw_case.source, 'stackoverflow')
+        self.assertFalse(raw_case.processed)
+
+class TestTrainingCase(TestCase):
+    def test_create_training_case(self):
+        raw_case = RawCase.objects.create(
+            raw_content='test', source='test'
+        )
+        training_case = TrainingCase.objects.create(
+            title='Test Case',
+            phenomenon='Test phenomenon',
+            root_cause='Test root cause',
+            solution='Test solution',
+            module='memory',
+            raw_case=raw_case,
+            quality_score=85.0
+        )
+        self.assertEqual(training_case.quality_score, 85.0)
+        self.assertEqual(training_case.raw_case, raw_case)
+
+class TestIntegration(TestCase):
+    def test_full_pipeline(self):
+        # 1. 创建原始案例
+        raw_case = RawCase.objects.create(
+            raw_content='test content',
+            source='test'
+        )
+        
+        # 2. 处理并保存到训练集
+        training_case = TrainingCase.objects.create(
+            title='Processed Case',
+            phenomenon='Test',
+            root_cause='Test',
+            solution='Test',
+            module='memory',
+            raw_case=raw_case,
+            quality_score=80.0
+        )
+        
+        # 3. 标记原始案例为已处理
+        raw_case.processed = True
+        raw_case.save()
+        
+        # 4. 验证
+        self.assertTrue(raw_case.processed)
+        self.assertEqual(TrainingCase.objects.count(), 1)
+`
+
+### 10.7 测试执行检查清单
+
+- [ ] 所有单元测试通过
+- [ ] 集成测试通过
+- [ ] 性能测试达标
+- [ ] 代码覆盖率 >= 60%
+- [ ] 无P0/P1级别缺陷
+- [ ] 文档更新完整

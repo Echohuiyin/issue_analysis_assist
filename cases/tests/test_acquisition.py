@@ -4,10 +4,10 @@ import json
 
 # Import all components to test
 from cases.acquisition.fetchers import (
-    BaseFetcher, HTTPFetcher, StackOverflowFetcher, CSDNFetcher
+    BaseFetcher, HTTPFetcher, StackOverflowFetcher, CSDNFetcher, ZhihuFetcher
 )
 from cases.acquisition.parsers import (
-    BaseParser, BlogParser, ForumParser
+    BaseParser, BlogParser, ForumParser, ZhihuParser
 )
 from cases.acquisition.validators import CaseValidator
 from cases.acquisition.storage import CaseStorage
@@ -165,6 +165,48 @@ class TestCSDNFetcher(TestCase):
 
         self.assertIsNotNone(result)
         self.assertIn('Test Article', result)
+
+
+class TestZhihuFetcher(TestCase):
+    @patch('requests.get')
+    def test_search_by_api(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": [
+                {"object": {"url": "https://www.zhihu.com/question/123456789/answer/987654321"}},
+                {"object": {"url": "https://zhuanlan.zhihu.com/p/12345678"}},
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        fetcher = ZhihuFetcher()
+        urls = fetcher.search("内核 panic", count=2)
+        self.assertEqual(len(urls), 2)
+        self.assertIn("zhihu.com/question/123456789", urls[0])
+        self.assertIn("zhuanlan.zhihu.com/p/12345678", urls[1])
+
+    @patch('requests.get')
+    def test_search_api_fallback_to_html(self, mock_get):
+        html_resp = MagicMock()
+        html_resp.status_code = 200
+        html_resp.text = """
+        https://www.zhihu.com/question/111222333/answer/444555666
+        https://zhuanlan.zhihu.com/p/99887766
+        """
+        html_resp.apparent_encoding = 'utf-8'
+
+        def _fake_get(url, *args, **kwargs):
+            if "api/v4/search_v3" in url:
+                raise Exception("api unavailable")
+            return html_resp
+
+        mock_get.side_effect = _fake_get
+
+        fetcher = ZhihuFetcher()
+        urls = fetcher.search("kernel panic", count=2)
+        self.assertEqual(len(urls), 2)
+        self.assertIn("question/111222333", urls[0])
 
 
 class TestContentCleaner(TestCase):
@@ -371,8 +413,8 @@ class TestCaseValidator(TestCase):
         }
         
         result = validator.validate(case_data)
-        self.assertTrue(result['is_valid'])
-        self.assertTrue(len(result.get('warnings', [])) > 0)
+        self.assertFalse(result['is_valid'])
+        self.assertTrue(len(result.get('warnings', [])) > 0 or len(result.get('errors', [])) > 0)
 
     def test_quality_score_calculation(self):
         """Test CaseValidator quality score calculation"""
@@ -546,6 +588,28 @@ class TestBlogParser(TestCase):
         self.assertTrue("添加内存释放代码" in result['solution'] or "Linux内核内存泄漏问题分析" in result['solution'])
 
 
+class TestZhihuParser(TestCase):
+    def test_parse_zhihu_content(self):
+        parser = ZhihuParser()
+        html = """
+        <html><body>
+            <h1 class="QuestionHeader-title">Linux内核panic定位记录</h1>
+            <div class="RichContent-inner">
+                <h2>现象</h2>
+                <p>系统出现kernel panic并输出Call Trace。</p>
+                <h2>根因分析</h2>
+                <p>驱动空指针未校验导致崩溃。</p>
+                <h2>解决方案</h2>
+                <p>增加NULL检查并补充回归测试。</p>
+            </div>
+        </body></html>
+        """
+        result = parser.parse(html)
+        self.assertIsNotNone(result)
+        self.assertIn("Linux内核panic定位记录", result["title"])
+        self.assertIn("kernel panic", result["phenomenon"])
+
+
 class TestForumParser(TestCase):
     def test_parse_stackoverflow_json(self):
         """Test ForumParser parse method with StackOverflow JSON"""
@@ -568,3 +632,54 @@ class TestForumParser(TestCase):
         self.assertIn('linux-kernel, kernel-panic', result['affected_components'])
         self.assertIn('check your pointer handling', result['root_cause'])
         self.assertEqual(result['reference_url'], 'https://stackoverflow.com/questions/12345/test')
+
+
+class TestCaseAcquisitionPerformance(TestCase):
+    def test_acquire_cases_bounded_concurrency(self):
+        from cases.acquisition.main import CaseAcquisition
+
+        acquisition = CaseAcquisition()
+
+        def fake_acquire_case(url, content_type="blog", source=""):
+            return {"success": True, "message": "ok", "case_id": url.split("/")[-1]}
+
+        acquisition.acquire_case = fake_acquire_case
+        sources = [{"url": f"https://example.com/{i}", "content_type": "blog", "source": "mock"} for i in range(12)]
+
+        results = acquisition.acquire_cases(
+            sources,
+            max_workers=4,
+            batch_size=5,
+            use_concurrency=True,
+        )
+        self.assertEqual(len(results), 12)
+        self.assertTrue(all(item.get("success") for item in results))
+        self.assertEqual(results[0]["source_url"], "https://example.com/0")
+
+
+class TestCaseAcquisitionQualityGate(TestCase):
+    def test_discard_low_quality_case(self):
+        from cases.acquisition.main import CaseAcquisition
+
+        acquisition = CaseAcquisition()
+        acquisition.fetcher.fetch = MagicMock(return_value="<html><body><h1>T</h1><article>mock content</article></body></html>")
+        acquisition.llm_parser.parse = MagicMock(return_value={
+            "title": "Kernel issue",
+            "module": "driver",
+            "phenomenon": "short",
+            "environment": "Linux",
+            "root_cause": "short",
+            "analysis_process": "short",
+            "solution": "short",
+            "troubleshooting_steps": ["s1"],
+        })
+        acquisition.validators.validate = MagicMock(return_value={
+            "is_valid": True,
+            "quality_score": 75,
+            "warnings": ["low quality"],
+            "low_quality_flags": ["phenomenon_incomplete"],
+        })
+
+        result = acquisition.acquire_case("https://example.com/test", content_type="blog", source="mock")
+        self.assertFalse(result["success"])
+        self.assertIn("low quality score", result["message"])

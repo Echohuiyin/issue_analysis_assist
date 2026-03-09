@@ -1,5 +1,23 @@
 # Problem AI - Linux内核问题自动分析系统 开发设计文档
 
+## 0. 当前实现对齐说明（2026-03）
+
+本文件包含目标态架构设计（微服务/FastAPI/Chroma 等）。当前仓库可运行实现采用 Django 单体形态，并按优先级先完成第一/第二部分闭环。请以以下边界作为当前代码事实：
+
+- 当前优先级：
+  - P0：案例获取与解析（Part 1）
+  - P0：案例存储与向量化（Part 2）
+  - P1：SKILL训练与自动分析（Part 3/4，接口保留，暂不实现）
+- 当前默认数据库：SQLite（`USE_POSTGRES=0`）；PostgreSQL 为可选后置路径。
+- 当前向量方案：本地轻量向量存储（JSON 持久化）+ 余弦检索。
+- 当前采集编排链路：`fetch -> parse -> clean -> classify -> validate -> store`。
+
+### 0.1 第三/四部分接口保留策略
+
+- `cases/analysis/interfaces.py` 提供 `SKILLStorage` / `SKILLTrainer` / `IssueAnalyzer` 占位类。
+- `cases/analysis/__init__.py` 仅导出占位接口，运行时抛出 `NotImplementedError`。
+- 旧实现文件与对应测试已清理，避免误导当前交付范围。
+
 ## 1. 系统架构设计
 
 ### 1.1 整体架构

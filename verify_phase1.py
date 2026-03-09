@@ -15,6 +15,7 @@ import os
 import sys
 import subprocess
 import json
+import time
 from typing import Dict, List
 
 # 添加项目根目录到 Python 路径
@@ -119,7 +120,7 @@ def test_module_classifier():
         classified_module = module_classifier.classify_module(text)
         print(f"文本: '{text}'")
         print(f"分类结果: {classified_module} (期望: {expected_module})")
-        print(f"{'✓' if classified_module == expected_module else '✗'}\n")
+        print(f"{'[OK]' if classified_module == expected_module else '[FAIL]'}\n")
         
         if classified_module == expected_module:
             correct_count += 1
@@ -257,6 +258,41 @@ def test_full_acquisition_flow():
         print(f"测试失败: {e}")
         return False
 
+
+def benchmark_throughput_improvement():
+    """验证有界并发/批处理带来的吞吐提升（可复现）"""
+    print("\n=== 吞吐量优化验证 ===")
+    ca = CaseAcquisition()
+
+    # 用mock URL驱动流程，并替换acquire_case为固定耗时任务，确保基准稳定可复现
+    sources = [{"url": f"https://example.com/case/{i}", "content_type": "blog", "source": "mock"} for i in range(20)]
+    original_acquire_case = ca.acquire_case
+
+    def fake_acquire_case(url, content_type="blog", source=""):
+        time.sleep(0.05)
+        return {"success": True, "message": "ok", "case_id": f"MOCK-{url.split('/')[-1]}"}
+
+    ca.acquire_case = fake_acquire_case
+    try:
+        t0 = time.perf_counter()
+        seq_results = ca.acquire_cases(sources, max_workers=1, batch_size=20, use_concurrency=False)
+        seq_elapsed = time.perf_counter() - t0
+
+        t1 = time.perf_counter()
+        par_results = ca.acquire_cases(sources, max_workers=5, batch_size=10, use_concurrency=True)
+        par_elapsed = time.perf_counter() - t1
+    finally:
+        ca.acquire_case = original_acquire_case
+
+    seq_ok = sum(1 for r in seq_results if r.get("success"))
+    par_ok = sum(1 for r in par_results if r.get("success"))
+    speedup = (seq_elapsed / par_elapsed) if par_elapsed > 0 else 0.0
+
+    print(f"顺序处理: {seq_ok}/{len(seq_results)} 成功, {seq_elapsed:.3f}s")
+    print(f"并发处理: {par_ok}/{len(par_results)} 成功, {par_elapsed:.3f}s")
+    print(f"吞吐提升倍数: {speedup:.2f}x")
+    return speedup >= 1.5
+
 def main():
     """主函数"""
     print("Linux内核问题自动分析系统 - 案例获取模块验证")
@@ -269,6 +305,7 @@ def main():
         ("内核模块分类器", test_module_classifier),
         ("StackOverflow爬虫", test_stackoverflow_fetcher),
         ("CSDN爬虫", test_csdn_fetcher),
+        ("吞吐量优化验证", benchmark_throughput_improvement),
         ("完整获取流程", test_full_acquisition_flow),
     ]
     
@@ -291,7 +328,7 @@ def main():
     total = len(results)
     
     for test_name, result in results:
-        status = "✓ 通过" if result else "✗ 失败"
+        status = "[OK] 通过" if result else "[FAIL] 失败"
         print(f"{test_name:20}: {status}")
         if result:
             passed += 1
@@ -299,7 +336,7 @@ def main():
     print(f"\n总体结果: {passed}/{total} 个测试通过")
     
     if passed == total:
-        print("🎉 所有测试通过！Phase 1 验证成功！")
+        print("[OK] 所有测试通过！Phase 1 验证成功！")
         return 0
     else:
         print("❌ 部分测试失败，请检查代码！")

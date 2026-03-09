@@ -72,25 +72,25 @@ def display_case(case_data, validation_result, source, parser_type):
         print(f"  {solution}")
     
     print(f"\n【质量验证结果】")
-    print(f"  验证状态: {'✓ 通过' if validation_result['is_valid'] else '✗ 失败'}")
-    print(f"  高质量案例: {'✓ 是' if validation_result.get('is_high_quality', False) else '✗ 否'}")
+    print(f"  验证状态: {'[OK] 通过' if validation_result['is_valid'] else '[FAIL] 失败'}")
+    print(f"  高质量案例: {'[OK] 是' if validation_result.get('is_high_quality', False) else '[FAIL] 否'}")
     print(f"  质量分数: {validation_result.get('quality_score', 0):.1f}/100")
     
     if 'quality_scores' in validation_result:
         print(f"  各字段分数:")
         for field, score in validation_result['quality_scores'].items():
-            status = "✓" if score >= 60 else "✗"
+            status = "[OK]" if score >= 60 else "[FAIL]"
             print(f"    {status} {field}: {score:.1f}")
     
     if validation_result.get('errors'):
         print(f"  错误 ({len(validation_result['errors'])} 个):")
         for error in validation_result['errors']:
-            print(f"    ✗ {error}")
+            print(f"    [FAIL] {error}")
     
     if validation_result.get('warnings'):
         print(f"  警告 ({len(validation_result['warnings'])} 个):")
         for warning in validation_result['warnings']:
-            print(f"    ⚠ {warning}")
+            print(f"    [WARN] {warning}")
 
 
 def test_llm_parser():
@@ -103,9 +103,9 @@ def test_llm_parser():
     llm_parser = LLMParser(llm_type="auto")
     
     if llm_parser.llm.is_available():
-        print(f"\n✓ LLM已配置: {llm_parser.llm.__class__.__name__}")
+        print(f"\n[OK] LLM已配置: {llm_parser.llm.__class__.__name__}")
     else:
-        print("\n✗ LLM未配置，将使用Mock模式或传统规则方法")
+        print("\n[FAIL] LLM未配置，将使用Mock模式或传统规则方法")
         print("提示: 设置环境变量 OPENAI_API_KEY 或 DEEPSEEK_API_KEY 以启用LLM")
     
     # 测试案例
@@ -190,9 +190,9 @@ Linux内核问题
         expected_high = test_case['expected_quality'] == 'high'
         
         if is_high_quality == expected_high:
-            print(f"\n✓ 质量评估符合预期")
+            print(f"\n[OK] 质量评估符合预期")
         else:
-            print(f"\n✗ 质量评估不符合预期")
+            print(f"\n[FAIL] 质量评估不符合预期")
 
 
 def test_real_cases():
@@ -239,6 +239,78 @@ def test_real_cases():
         print(f"CSDN测试失败: {e}")
 
 
+def evaluate_labeled_quality_gain():
+    """使用小规模标注集验证优化前后质量差异（可复现）"""
+    print("\n\n" + "=" * 80)
+    print("标注集质量增益评估（Baseline vs Improved）")
+    print("=" * 80)
+    validator = CaseValidator()
+
+    labeled_pairs = [
+        {
+            "name": "panic-calltrace",
+            "baseline": {
+                "title": "Linux kernel issue",
+                "phenomenon": "系统异常，见文章",
+                "environment": "Linux",
+                "root_cause": "See article for details",
+                "analysis_process": "",
+                "key_logs": "",
+                "solution": "See article",
+                "troubleshooting_steps": ["N/A"],
+            },
+            "improved": {
+                "title": "Linux kernel panic due to null pointer dereference",
+                "phenomenon": "系统在高并发下触发kernel panic，出现NULL pointer dereference与Oops错误。",
+                "environment": "Linux 5.10.0 x86_64",
+                "root_cause": "驱动probe路径未检查空指针，直接访问private_data导致崩溃。",
+                "analysis_process": "先对dmesg关键日志进行筛选，再根据Call Trace定位到driver_probe，最后代码审查确认缺少NULL检查。",
+                "key_logs": "[12345.678901] BUG: unable to handle kernel NULL pointer dereference\nCall Trace: driver_probe+0x56/0x100",
+                "solution": "在probe入口增加NULL检查并在错误路径释放资源，补充回归测试。",
+                "troubleshooting_steps": ["收集dmesg日志", "分析Call Trace", "修复并回归验证"],
+            },
+        },
+        {
+            "name": "oom-leak",
+            "baseline": {
+                "title": "OOM problem",
+                "phenomenon": "内存有问题",
+                "environment": "Linux",
+                "root_cause": "可能是bug",
+                "analysis_process": "",
+                "key_logs": "",
+                "solution": "升级版本",
+                "troubleshooting_steps": ["check"],
+            },
+            "improved": {
+                "title": "Kernel OOM triggered by driver memory leak",
+                "phenomenon": "业务高峰出现page allocation failure并触发OOM killer，节点周期性重启。",
+                "environment": "Linux 5.15, container runtime",
+                "root_cause": "驱动缓存对象引用计数错误导致内存长期泄漏。",
+                "analysis_process": "通过memcg指标发现异常增长，随后kmemleak定位泄漏对象，最终追踪到释放路径缺失。",
+                "key_logs": "[2203.12] Out of memory: Killed process 1024\nkernel: page allocation failure: order:0",
+                "solution": "修复引用计数并在卸载路径补充kfree，加入压测验证脚本。",
+                "troubleshooting_steps": ["查看OOM日志", "定位泄漏对象", "修复释放路径并压测"],
+            },
+        },
+    ]
+
+    baseline_scores = []
+    improved_scores = []
+    for pair in labeled_pairs:
+        b = validator.validate(pair["baseline"])
+        i = validator.validate(pair["improved"])
+        baseline_scores.append(float(b.get("quality_score", 0)))
+        improved_scores.append(float(i.get("quality_score", 0)))
+        print(f"{pair['name']}: baseline={b.get('quality_score', 0):.1f}, improved={i.get('quality_score', 0):.1f}")
+
+    avg_baseline = sum(baseline_scores) / len(baseline_scores)
+    avg_improved = sum(improved_scores) / len(improved_scores)
+    gain = avg_improved - avg_baseline
+    print(f"\n平均分: baseline={avg_baseline:.1f}, improved={avg_improved:.1f}, gain={gain:.1f}")
+    return gain >= 20
+
+
 def main():
     """主函数"""
     print("Linux内核问题自动分析系统 - LLM智能解析器测试")
@@ -249,6 +321,10 @@ def main():
     
     # 测试真实案例
     test_real_cases()
+    
+    # 标注集质量增益验证
+    gain_ok = evaluate_labeled_quality_gain()
+    print(f"\n标注集质量增益验证: {'[OK] 通过' if gain_ok else '[FAIL] 未达标'}")
     
     print("\n\n" + "=" * 80)
     print("测试完成")

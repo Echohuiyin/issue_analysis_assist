@@ -4,6 +4,18 @@
 
 The Kernel Issue Case Management System is a web application designed to record, manage, and query kernel-related issue cases. Built with Django framework and SQLite database, it provides functions for case CRUD operations, search, and statistics, aiming to help kernel developers and maintainers efficiently manage and share kernel issue solving experiences.
 
+## 1.1 Current Priority Architecture (2026-03)
+
+- Active scope: **Part 1 + Part 2** only (acquisition/parsing + storage/vectorization).
+- Default runtime path: **SQLite** for local debugging; PostgreSQL remains optional and lower priority.
+- Part 3/4 (SKILL training and automated analysis): implementation removed, only compatibility interfaces reserved in `cases/analysis/interfaces.py`.
+- Data flow in current runtime:
+  1. Multi-source fetch (`StackOverflow/CSDN/Zhihu`)
+  2. Local LLM parse + rule fallback
+  3. Quality evaluation (`quality_score >= 80`)
+  4. Django ORM persistence
+  5. Local vector index upsert (best-effort)
+
 ## 2. Technology Stack
 
 | Category | Technology | Version | Purpose |
@@ -326,15 +338,10 @@ The system adopts modular design for easy future expansion:
 - [x] Implementation completed
 - [x] Integration testing completed
 
-### Phase 3: SKILL Training
-- [x] Design document completed
-- [x] Test cases written for all components
-- [x] Implementation of SKILL storage module
-- [x] Implementation of SKILL training module
-- [x] Integration testing completed
+### Phase 3: SKILL Training (Reserved)
+- [x] Interface placeholder completed
+- [ ] Runtime implementation postponed
 
-### Phase 4: Automated Analysis
-- [x] Design document completed
-- [x] Test cases written for all components
-- [x] Implementation of IssueAnalyzer module
-- [x] Integration testing completed
+### Phase 4: Automated Analysis (Reserved)
+- [x] Interface placeholder completed
+- [ ] Runtime implementation postponed

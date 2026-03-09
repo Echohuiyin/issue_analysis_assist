@@ -5,12 +5,12 @@
 
 ## 1. Project Overview
 
-The Kernel Issue Automated Analysis System is a comprehensive platform designed to help kernel developers and maintainers efficiently manage, analyze, and resolve kernel-related issues. The system consists of four integrated components:
+The Kernel Issue Automated Analysis System is a platform focused on kernel issue case acquisition, storage, and retrieval. The current priority is a stable phase-1/2 closed loop (acquisition + storage/vectorization), while phase-3/4 are kept as reserved interfaces.
 
 1. **Kernel Case Acquisition**: Automatically crawls and extracts kernel issue cases from various sources
 2. **Kernel Case Structured Storage & Display**: Stores cases in a structured format and provides web interfaces for management
-3. **SKILL Training**: Trains AI models using stored cases to create specialized kernel issue analysis skills
-4. **Automated Kernel Issue Analysis**: Uses trained models to automatically analyze new kernel issues and provide solutions
+3. **SKILL Training (Reserved Interface)**: Postponed implementation, compatibility interface retained
+4. **Automated Kernel Issue Analysis (Reserved Interface)**: Postponed implementation, compatibility interface retained
 
 Built with Django framework and SQLite database, the system aims to streamline the kernel issue resolution process through automation and knowledge sharing.
 
@@ -59,19 +59,13 @@ The system now uses a three-table architecture to separate raw data, training da
 - **Pagination**: Paginated display of case lists
 - **Web Interface**: User-friendly interface for case management
 
-### Part 3: SKILL Training
-- **SKILL Storage**: Stores and manages specialized kernel analysis skills
-- **Community SKILL Integration**: Downloads and integrates community-developed SKILLs
-- **Case-based Training**: Trains SKILLs using stored kernel issue cases
-- **Evaluation Metrics**: Tracks SKILL performance with accuracy and effectiveness metrics
-- **SKILL Optimization**: Continuously improves SKILLs based on feedback
+### Part 3: SKILL Training (Reserved)
+- Interface placeholders are kept in `cases/analysis/interfaces.py`
+- Runtime implementation is intentionally postponed
 
-### Part 4: Automated Kernel Issue Analysis
-- **Issue Submission**: Accepts issue descriptions and log files
-- **Log Parsing**: Extracts relevant information from kernel logs
-- **SKILL-based Analysis**: Uses trained SKILLs to analyze issues
-- **Structured Reports**: Generates detailed analysis reports with root causes, solutions, and troubleshooting steps
-- **Confidence Scoring**: Provides confidence ratings for analysis results
+### Part 4: Automated Kernel Issue Analysis (Reserved)
+- Interface placeholders are kept in `cases/analysis/interfaces.py`
+- Runtime implementation is intentionally postponed
 
 ## 4. Project Structure
 
@@ -84,10 +78,9 @@ The system now uses a three-table architecture to separate raw data, training da
 │   │   ├── validators.py    # Data validation
 │   │   ├── storage.py       # Database integration for acquisition
 │   │   └── main.py          # Main acquisition orchestrator
-│   ├── analysis/            # SKILL training and automated analysis
-│   │   ├── skill_storage.py # SKILL storage and management
-│   │   ├── skill_trainer.py # SKILL training and optimization
-│   │   └── issue_analyzer.py # Automated issue analysis
+│   ├── analysis/            # Reserved interfaces for phase-3/4
+│   │   ├── interfaces.py    # Placeholder interfaces only
+│   │   └── __init__.py      # Compatibility exports
 │   ├── models.py            # Database models
 │   ├── forms.py             # Forms for case management
 │   ├── views.py             # View functions/classes
@@ -173,8 +166,7 @@ The system has comprehensive test coverage for all components:
 - **Form Tests**: Testing form validation, field constraints, and widget configuration
 - **View Tests**: Testing all view functions, URL routing, and template rendering
 - **Acquisition Tests**: Testing case crawling, parsing, validation, and storage
-- **SKILL Tests**: Testing SKILL storage, training, and optimization
-- **Analysis Tests**: Testing automated issue analysis functionality
+- **Storage+RAG Integration Tests**: Testing database CRUD and local vector retrieval
 
 ### 6.2 Running Tests
 
@@ -194,11 +186,8 @@ To run specific test modules:
 # Test acquisition components
 $env:DJANGO_SETTINGS_MODULE='kernel_cases.settings'; python manage.py test cases.tests.test_acquisition
 
-# Test SKILL components
-$env:DJANGO_SETTINGS_MODULE='kernel_cases.settings'; python manage.py test cases.tests.test_skill
-
-# Test automated analysis components
-$env:DJANGO_SETTINGS_MODULE='kernel_cases.settings'; python manage.py test cases.tests.test_issue_analyzer
+# Test storage + vector integration
+python verify_storage_rag.py
 ```
 
 ### 6.3 Test Results
@@ -250,25 +239,8 @@ All test cases have been executed and passed successfully, ensuring the system i
 python -c "from cases.acquisition.main import CaseAcquisition; ca = CaseAcquisition(); ca.run()"
 ```
 
-#### SKILL Training
-```bash
-# Run SKILL training
-python -c "from cases.analysis import SKILLStorage, SKILLTrainer; storage = SKILLStorage(); trainer = SKILLTrainer(storage); trainer.train_skill('kernel_panic_analysis')"
-```
-
-#### Automated Analysis
-```python
-# Use the IssueAnalyzer
-from cases.analysis import SKILLStorage, IssueAnalyzer
-storage = SKILLStorage()
-analyzer = IssueAnalyzer(storage)
-
-result = analyzer.analyze_issue(
-    "Kernel panic due to null pointer dereference",
-    "[12345.678901] BUG: kernel NULL pointer dereference, address: 0000000000000008"
-)
-print(result['summary'])
-```
+#### Reserved Interfaces (Phase-3/4)
+`cases.analysis.SKILLStorage`, `cases.analysis.SKILLTrainer`, `cases.analysis.IssueAnalyzer` are intentionally placeholder interfaces and currently raise `NotImplementedError`.
 
 ### 6.3 Production Environment Deployment
 

@@ -42,7 +42,7 @@ class OllamaLLM(BaseLLM):
     - mistral - Mistral AI
     """
     
-    def __init__(self, model: str = "qwen:1.8b", base_url: str = "http://localhost:11434"):
+    def __init__(self, model: str = "qwen2.5:0.5b", base_url: str = "http://localhost:11434"):
         self.model = model
         self.base_url = base_url.rstrip('/')
         self._available = None

@@ -349,7 +349,160 @@ class ProcessedCase(BaseModel):
 ### 3.1 模块职责
 负责存储案例数据、管理向量库，为其他模块提供数据服务。
 
-### 3.2 PostgreSQL表结构设计
+### 3.2 三表结构设计（V3.0 已实现）
+
+#### 3.2.0 三表架构概述
+
+系统采用三表分离架构，将原始数据、训练数据、测试数据分开存储，实现数据流程的清晰管理。
+
+**架构图**：
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        数据获取层                                │
+│  StackOverflow / CSDN / 知乎 / 掘金                              │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ fetch_raw_cases.py
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    RawCase 表（原始案例表）                       │
+│  • 存储原始内容（标题、HTML、纯文本）                             │
+│  • 状态管理：pending → processing → processed/failed/low_quality │
+│  • 去重机制：content_hash                                        │
+│  • 当前数据：76条                                                 │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ process_raw_cases.py (LLM处理)
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    质量评估与验证                                 │
+│  • 质量分数 ≥ 70                                                 │
+│  • 置信度 ≥ 0.7                                                  │
+│  • 必填字段完整性检查                                            │
+└──────────────┬──────────────────────────┬───────────────────────┘
+               │ 80%                      │ 20%
+               ▼                          ▼
+┌──────────────────────────┐   ┌──────────────────────────┐
+│   TrainingCase 表        │   │   TestCase 表            │
+│   （训练数据表）          │   │   （测试数据表）          │
+│  • 结构化案例数据         │   │  • 结构化案例数据         │
+│  • 向量嵌入               │   │  • 向量嵌入               │
+│  • 质量评分               │   │  • 质量评分               │
+│  • 用于SKILL训练          │   │  • 用于系统测试           │
+└──────────────────────────┘   └──────────────────────────┘
+```
+
+**实现文件**：
+- `cases/models.py` - 三表模型定义
+- `fetch_raw_cases.py` - 原始案例获取程序
+- `process_raw_cases.py` - 案例处理程序
+- `test_three_tables.py` - 测试脚本
+
+**数据流程**：
+1. **获取阶段**：从多个数据源获取原始内容，存储到RawCase表
+2. **处理阶段**：使用LLM解析原始内容，生成结构化数据
+3. **验证阶段**：评估案例质量，过滤低质量案例
+4. **分配阶段**：80%分配到TrainingCase，20%分配到TestCase
+
+**关键特性**：
+- ✅ 支持多数据源（StackOverflow、CSDN、知乎、掘金）
+- ✅ 智能延迟避免被封禁
+- ✅ HTML解析和内容提取
+- ✅ 去重机制
+- ✅ 质量评估
+- ✅ 自动训练/测试集划分
+- ✅ 向量嵌入生成
+
+#### 3.2.1 RawCase表（原始案例表）- Django实现
+
+```python
+class RawCase(models.Model):
+    """原始案例表 - 存储从各数据源获取的原始内容"""
+    
+    SOURCE_CHOICES = [
+        ('stackoverflow', 'StackOverflow'),
+        ('csdn', 'CSDN'),
+        ('zhihu', '知乎'),
+        ('juejin', '掘金'),
+        ('other', '其他'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('pending', '待处理'),
+        ('processing', '处理中'),
+        ('processed', '已处理'),
+        ('failed', '处理失败'),
+        ('low_quality', '质量不合格'),
+    ]
+    
+    raw_id = models.AutoField(primary_key=True, verbose_name='原始案例ID')
+    source = models.CharField(max_length=50, choices=SOURCE_CHOICES, verbose_name='数据源')
+    source_id = models.CharField(max_length=100, verbose_name='源ID', blank=True, default='')
+    url = models.URLField(verbose_name='原始URL', max_length=500, blank=True, default='')
+    
+    raw_title = models.CharField(max_length=500, verbose_name='原始标题', blank=True, default='')
+    raw_content = models.TextField(verbose_name='原始内容')
+    raw_html = models.TextField(verbose_name='原始HTML', blank=True, default='')
+    
+    fetch_time = models.DateTimeField(default=timezone.now, verbose_name='获取时间')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='处理状态')
+    process_time = models.DateTimeField(verbose_name='处理时间', null=True, blank=True)
+    process_error = models.TextField(verbose_name='处理错误信息', blank=True, default='')
+    
+    content_hash = models.CharField(max_length=64, verbose_name='内容哈希', unique=True, db_index=True)
+    
+    class Meta:
+        db_table = 'cases_rawcase'
+        verbose_name = '原始案例'
+        verbose_name_plural = '原始案例'
+        indexes = [
+            models.Index(fields=['source', 'status']),
+            models.Index(fields=['status']),
+        ]
+```
+
+#### 3.2.2 TrainingCase表（训练数据表）- Django实现
+
+```python
+class TrainingCase(models.Model):
+    """训练数据表 - 存储高质量的结构化案例"""
+    
+    case_id = models.CharField(max_length=50, primary_key=True, verbose_name='案例ID')
+    raw_case = models.ForeignKey(RawCase, on_delete=models.SET_NULL, null=True, blank=True, 
+                                  verbose_name='原始案例', related_name='training_cases')
+    
+    title = models.CharField(max_length=200, verbose_name='案例标题')
+    phenomenon = models.TextField(verbose_name='问题现象')
+    logs = models.TextField(verbose_name='相关日志', blank=True, default='')
+    environment = models.TextField(verbose_name='环境信息', blank=True, default='')
+    root_cause = models.TextField(verbose_name='根本原因')
+    analysis_process = models.TextField(verbose_name='分析过程', blank=True, default='')
+    solution = models.TextField(verbose_name='解决方案')
+    prevention = models.TextField(verbose_name='预防措施', blank=True, default='')
+    
+    kernel_module = models.CharField(max_length=50, verbose_name='内核模块', blank=True, default='')
+    severity = models.CharField(max_length=20, verbose_name='严重程度', blank=True, default='')
+    
+    quality_score = models.FloatField(verbose_name='质量分数', default=0.0)
+    confidence = models.FloatField(verbose_name='置信度', default=0.0)
+    embedding = models.BinaryField(verbose_name='向量嵌入', null=True, blank=True)
+    
+    created_date = models.DateTimeField(default=timezone.now, verbose_name='创建时间')
+    updated_date = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    
+    class Meta:
+        db_table = 'cases_trainingcase'
+        verbose_name = '训练案例'
+        verbose_name_plural = '训练案例'
+        indexes = [
+            models.Index(fields=['kernel_module', 'severity']),
+            models.Index(fields=['quality_score']),
+        ]
+```
+
+#### 3.2.3 TestCase表（测试数据表）
+
+与TrainingCase结构完全相同，用于存储测试数据。
+
+### 3.3 PostgreSQL表结构设计（原设计）
 
 #### 3.2.1 案例表 (cases)
 ```sql

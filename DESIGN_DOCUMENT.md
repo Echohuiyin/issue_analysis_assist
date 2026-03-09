@@ -43,7 +43,84 @@ The system adopts the classic MVC (Model-View-Controller) architecture pattern, 
 
 The data model layer defines the system's data structure and database interactions.
 
-#### 4.1.1 KernelCase Model
+#### 4.1.1 Three-Table Architecture (V3.0)
+
+The system now uses a three-table architecture to separate raw data, training data, and test data:
+
+**Architecture Overview**:
+```
+┌─────────────────┐
+│  Data Sources   │
+│  (StackOverflow │
+│   CSDN, Zhihu,  │
+│   Juejin)       │
+└────────┬────────┘
+         │ Fetch
+         ▼
+┌─────────────────┐
+│   RawCase Table │  ← Stores raw content from sources
+│   (原始案例表)   │    Status: pending → processing → processed/failed/low_quality
+└────────┬────────┘
+         │ Process with LLM
+         ▼
+┌─────────────────┐
+│ Quality Check   │  ← Quality score ≥ 70
+│ & Validation    │
+└────┬───────┬────┘
+     │       │
+     │ 80%   │ 20%
+     ▼       ▼
+┌─────────┐ ┌─────────┐
+│Training │ │  Test   │
+│  Case   │ │  Case   │
+│  Table  │ │  Table  │
+└─────────┘ └─────────┘
+```
+
+**Table 1: RawCase (原始案例表)**
+
+| Field Name | Type | Constraints | Description |
+|------------|------|-------------|-------------|
+| raw_id | Integer | Primary Key | Auto-incrementing primary key |
+| source | String(50) | Not Null | Data source (stackoverflow, csdn, zhihu, juejin) |
+| source_id | String(100) | | Source ID |
+| url | URLField(500) | | Original URL |
+| raw_title | String(500) | | Original title |
+| raw_content | Text | Not Null | Raw content |
+| raw_html | Text | | Raw HTML |
+| fetch_time | DateTime | Default: now | Fetch time |
+| status | String(20) | Default: pending | Processing status |
+| process_time | DateTime | | Processing time |
+| process_error | Text | | Error message |
+| content_hash | String(64) | Unique, Index | Content hash for deduplication |
+
+**Table 2: TrainingCase (训练数据表)**
+
+| Field Name | Type | Constraints | Description |
+|------------|------|-------------|-------------|
+| case_id | String(50) | Primary Key | Case ID |
+| raw_case | ForeignKey | | Link to RawCase |
+| title | String(200) | Not Null | Case title |
+| phenomenon | Text | Not Null | Problem phenomenon |
+| logs | Text | | Related logs |
+| environment | Text | | Environment info |
+| root_cause | Text | Not Null | Root cause |
+| analysis_process | Text | | Analysis process |
+| solution | Text | Not Null | Solution |
+| prevention | Text | | Prevention measures |
+| kernel_module | String(50) | Index | Kernel module |
+| severity | String(20) | Index | Severity level |
+| quality_score | Float | | Quality score (0-100) |
+| confidence | Float | | Confidence (0-1) |
+| embedding | BinaryField | | Vector embedding |
+| created_date | DateTime | Default: now | Creation time |
+| updated_date | DateTime | Auto: update | Update time |
+
+**Table 3: TestCase (测试数据表)**
+
+Same structure as TrainingCase, used for testing and validation.
+
+#### 4.1.2 KernelCase Model (Legacy)
 
 | Field Name | Type | Constraints | Description |
 |------------|------|-------------|-------------|

@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class VectorService:
-    def __init__(self, model: str = "qwen:1.8b", llm_type: str = "ollama"):
+    def __init__(self, model: str = "qwen2.5:0.5b", llm_type: str = "ollama"):
         self.model = model
         self.llm_type = llm_type.lower()
         self.embedding_dim = 4096

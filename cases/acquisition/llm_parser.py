@@ -68,14 +68,18 @@ class LLMParser:
 
 请只返回JSON，不要添加其他说明文字。"""
 
-    def __init__(self, llm_type: str = "auto"):
+    def __init__(self, llm_type: str = "auto", model: str = None):
         """
         初始化LLM解析器
         
         Args:
             llm_type: LLM类型 ("openai", "deepseek", "mock", "auto")
+            model: 模型名称（如 "qwen:1.8b", "qwen2.5:0.5b"）
         """
-        self.llm = get_llm(llm_type)
+        if model:
+            self.llm = get_llm(llm_type, model=model)
+        else:
+            self.llm = get_llm(llm_type)
     
     def parse(self, content: str, use_llm: bool = True) -> Optional[Dict]:
         """

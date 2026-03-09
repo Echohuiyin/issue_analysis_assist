@@ -1,5 +1,8 @@
 # Kernel Issue Automated Analysis System
 
+**Version**: V3.0  
+**Last Updated**: 2026-03-09
+
 ## 1. Project Overview
 
 The Kernel Issue Automated Analysis System is a comprehensive platform designed to help kernel developers and maintainers efficiently manage, analyze, and resolve kernel-related issues. The system consists of four integrated components:
@@ -10,6 +13,27 @@ The Kernel Issue Automated Analysis System is a comprehensive platform designed 
 4. **Automated Kernel Issue Analysis**: Uses trained models to automatically analyze new kernel issues and provide solutions
 
 Built with Django framework and SQLite database, the system aims to streamline the kernel issue resolution process through automation and knowledge sharing.
+
+### 1.1 V3.0 New Features - Three-Table Architecture
+
+The system now uses a three-table architecture to separate raw data, training data, and test data:
+
+- **RawCase Table**: Stores raw content fetched from various sources (StackOverflow, CSDN, Zhihu, Juejin)
+- **TrainingCase Table**: Stores high-quality structured cases (80%) for SKILL training
+- **TestCase Table**: Stores high-quality structured cases (20%) for system testing
+
+**Current Status**:
+- RawCase: 76 records (75 pending processing)
+- TrainingCase: 0 records
+- TestCase: 0 records
+
+**Key Features**:
+- ✅ Multi-source fetching with intelligent delays
+- ✅ HTML parsing and content extraction
+- ✅ Deduplication mechanism
+- ✅ Quality assessment (score ≥ 70)
+- ✅ Automatic training/test set split (80%/20%)
+- ✅ Vector embedding generation for RAG
 
 ## 2. Technology Stack
 
@@ -78,12 +102,70 @@ Built with Django framework and SQLite database, the system aims to streamline t
 ├── requirements.txt         # Project dependencies
 ├── README.md                # Project documentation
 ├── DESIGN_DOCUMENT.md       # Detailed design document
-└── PROGRESS_TRACKING.md     # Project progress tracking
+├── PROGRESS_TRACKING.md     # Project progress tracking
+├── THREE_TABLES_README.md   # Three-table structure documentation
+├── THREE_TABLES_SUMMARY.md  # Three-table implementation summary
+└── THREE_TABLES_COMPLETION.md # Three-table completion report
 ```
 
-## 5. Testing
+## 5. Quick Start - Three-Table Workflow
 
-### 5.1 Test Coverage
+### 5.1 Fetch Raw Cases
+
+Fetch cases from multiple sources:
+
+```bash
+# Fetch 10 cases from StackOverflow and CSDN
+python3 fetch_raw_cases.py --count 10 --sources stackoverflow csdn
+
+# Fetch with custom keywords
+python3 fetch_raw_cases.py --keywords "kernel panic" "kernel oops" --count 20
+
+# Continuous fetching (every 30 minutes)
+python3 fetch_raw_cases.py --continuous --interval 30
+```
+
+### 5.2 Process Raw Cases
+
+Process raw cases with LLM:
+
+```bash
+# Process 10 pending cases
+python3 process_raw_cases.py --batch-size 10
+
+# Process all pending cases
+python3 process_raw_cases.py --all
+```
+
+### 5.3 View Results
+
+Check database status:
+
+```bash
+# View statistics
+python3 test_three_tables.py
+
+# View demo
+python3 demo_three_tables.py
+```
+
+### 5.4 Admin Interface
+
+Access Django admin:
+
+```bash
+# Create superuser
+python3 manage.py createsuperuser
+
+# Start server
+python3 manage.py runserver
+
+# Visit: http://localhost:8000/admin/
+```
+
+## 6. Testing
+
+### 6.1 Test Coverage
 
 The system has comprehensive test coverage for all components:
 
@@ -94,7 +176,7 @@ The system has comprehensive test coverage for all components:
 - **SKILL Tests**: Testing SKILL storage, training, and optimization
 - **Analysis Tests**: Testing automated issue analysis functionality
 
-### 5.2 Running Tests
+### 6.2 Running Tests
 
 To run all tests:
 
@@ -119,19 +201,19 @@ $env:DJANGO_SETTINGS_MODULE='kernel_cases.settings'; python manage.py test cases
 $env:DJANGO_SETTINGS_MODULE='kernel_cases.settings'; python manage.py test cases.tests.test_issue_analyzer
 ```
 
-### 5.3 Test Results
+### 6.3 Test Results
 
 All test cases have been executed and passed successfully, ensuring the system is functioning correctly.
 
-## 6. Deployment and Running
+## 7. Deployment and Running
 
-### 6.1 Environment Requirements
+### 7.1 Environment Requirements
 
 - Python 3.13+
 - Django 4.2+
 - Required dependencies listed in requirements.txt
 
-### 6.2 Installation Steps
+### 7.2 Installation Steps
 
 1. Clone the project:
    ```bash
@@ -160,7 +242,7 @@ All test cases have been executed and passed successfully, ensuring the system i
    http://localhost:8080
    ```
 
-### 6.3 Using the System Components
+### 7.3 Using the System Components
 
 #### Case Acquisition
 ```bash
@@ -196,15 +278,25 @@ For production environment, it is recommended to:
 - Enable HTTPS
 - Configure logging and monitoring
 
-## 7. Documentation
+## 8. Documentation
 
 - **README.md**: Project overview, testing, and deployment instructions
 - **DESIGN_DOCUMENT.md**: Detailed system architecture and design documentation
 - **PROGRESS_TRACKING.md**: Project progress tracking and status updates
+- **THREE_TABLES_README.md**: Three-table structure documentation
+- **THREE_TABLES_SUMMARY.md**: Three-table implementation summary
+- **THREE_TABLES_COMPLETION.md**: Three-table completion report
 
-## 8. Summary
+## 9. Summary
 
 The Kernel Issue Automated Analysis System is a comprehensive, production-ready platform that helps kernel developers manage, analyze, and resolve kernel issues efficiently. The system integrates case acquisition, structured storage, SKILL training, and automated analysis into a single cohesive solution.
+
+**V3.0 Highlights**:
+- Three-table architecture for better data management
+- Multi-source case fetching (StackOverflow, CSDN, Zhihu, Juejin)
+- Intelligent delays and deduplication
+- Quality assessment and automatic training/test split
+- Vector embedding for RAG functionality
 
 With comprehensive test coverage and a modular architecture, the system provides a reliable foundation for kernel issue management and analysis. The automated analysis capabilities help reduce resolution time and improve consistency in issue handling.
 

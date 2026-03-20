@@ -1,39 +1,40 @@
-# Kernel Issue Automated Analysis System
+# Linux Kernel Issue Automated Analysis System
 
-**Version**: V3.0  
-**Last Updated**: 2026-03-09
+**Version**: V4.0  
+**Last Updated**: 2026-03-20
 
-## 1. Project Overview
+## 🎯 Project Overview
 
-The Kernel Issue Automated Analysis System is a platform focused on kernel issue case acquisition, storage, and retrieval. The current priority is a stable phase-1/2 closed loop (acquisition + storage/vectorization), while phase-3/4 are kept as reserved interfaces.
+A comprehensive system for collecting, analyzing, and providing intelligent Q&A for Linux kernel issues using RAG (Retrieval-Augmented Generation) technology.
 
-1. **Kernel Case Acquisition**: Automatically crawls and extracts kernel issue cases from various sources
-2. **Kernel Case Structured Storage & Display**: Stores cases in a structured format and provides web interfaces for management
-3. **SKILL Training (Reserved Interface)**: Postponed implementation, compatibility interface retained
-4. **Automated Kernel Issue Analysis (Reserved Interface)**: Postponed implementation, compatibility interface retained
+### Core Features
 
-Built with Django framework and SQLite database, the system aims to streamline the kernel issue resolution process through automation and knowledge sharing.
+1. **Kernel Case Acquisition** ✅ - Multi-source crawling and intelligent parsing
+2. **Structured Storage & Display** ✅ - Three-table architecture with vector embeddings
+3. **SKILL Training** ✅ - Knowledge extraction from cases
+4. **Automated Issue Analysis** ✅ - RAG-powered intelligent Q&A
+5. **RAG System** ✅ - Vector retrieval and intelligent Q&A
+6. **High-Quality Case Collection** 🔄 - Continuous collection from authoritative sources
 
-### 1.1 V3.0 New Features - Three-Table Architecture
+### Current Status (2026-03-20)
 
-The system now uses a three-table architecture to separate raw data, training data, and test data:
+- **Training Cases**: 203
+- **Test Cases**: 57
+- **Total Cases**: 260/1000 (26.0%)
+- **Background Collector**: Running (PID: 3243205)
+- **RAG System**: ✅ Production Ready
+- **Performance**: 85-90% similarity, 75-85% confidence
 
-- **RawCase Table**: Stores raw content fetched from various sources (StackOverflow, CSDN, Zhihu, Juejin)
-- **TrainingCase Table**: Stores high-quality structured cases (80%) for SKILL training
-- **TestCase Table**: Stores high-quality structured cases (20%) for system testing
+### Key Achievements
 
-**Current Status**:
-- RawCase: 76 records (75 pending processing)
-- TrainingCase: 0 records
-- TestCase: 0 records
-
-**Key Features**:
-- ✅ Multi-source fetching with intelligent delays
-- ✅ HTML parsing and content extraction
-- ✅ Deduplication mechanism
-- ✅ Quality assessment (score ≥ 70)
-- ✅ Automatic training/test set split (80%/20%)
-- ✅ Vector embedding generation for RAG
+- ✅ **Three-table architecture**: RawCase → TrainingCase/TestCase
+- ✅ **Multi-source collection**: StackOverflow, CSDN, Zhihu, Juejin, LKML, Bugzilla, Git, CVE
+- ✅ **RAG system**: Vector retrieval, Q&A engine, web interface
+- ✅ **Local LLM integration**: Ollama + Qwen 2.5 0.5B
+- ✅ **Background collection**: Continuous high-quality case collection
+- ✅ **REST API**: 6 endpoints for search, Q&A, analysis
+- ✅ **CLI tool**: Command-line interface for all operations
+- ✅ **Web interface**: 4 responsive pages with Bootstrap 5
 
 ## 2. Technology Stack
 

@@ -1037,9 +1037,254 @@ async def determine_module(user_input: str) -> str:
 
 ---
 
-## 6. 数据流转设计
+## 6. 模块五：RAG系统（已实现）
 
-### 6.1 案例数据流转
+### 6.1 模块职责
+实现基于检索增强生成（RAG）的智能问答系统，提供向量检索、案例推荐、智能问答等功能。
+
+### 6.2 核心组件设计
+
+#### 6.2.1 向量检索器 (VectorRetriever)
+```python
+class VectorRetriever:
+    """向量检索器"""
+    
+    def search(self, query: str, top_k: int = 5) -> List[Dict]:
+        """向量相似度检索"""
+    
+    def search_by_module(self, query: str, module: str, top_k: int = 5) -> List[Dict]:
+        """按模块检索"""
+    
+    def hybrid_search(self, query: str, top_k: int = 5) -> List[Dict]:
+        """混合检索（向量+关键词）"""
+```
+
+**性能指标**:
+- 检索延迟: < 1秒
+- 相似度: 85-90%
+- 支持模块过滤
+
+#### 6.2.2 案例推荐引擎 (CaseRecommender)
+```python
+class CaseRecommender:
+    """案例推荐引擎"""
+    
+    def recommend(self, case_id: str, top_k: int = 5) -> List[Dict]:
+        """基于案例推荐相似案例"""
+    
+    def recommend_by_symptoms(self, symptoms: str, top_k: int = 5) -> List[Dict]:
+        """基于症状推荐"""
+```
+
+#### 6.2.3 智能问答引擎 (QAEngine)
+```python
+class QAEngine:
+    """智能问答引擎"""
+    
+    def answer(self, question: str, cases: List[Dict]) -> Dict:
+        """生成答案"""
+    
+    def multi_turn_chat(self, question: str, history: List[Dict]) -> Dict:
+        """多轮对话"""
+    
+    def analyze_issue(self, description: str, logs: str) -> Dict:
+        """问题分析"""
+```
+
+**性能指标**:
+- 响应时间: 2-3秒
+- 置信度: 75-85%
+- 支持多轮对话
+
+### 6.3 API接口设计
+
+| 接口 | 方法 | 描述 |
+|------|------|------|
+| /api/search | POST | 向量检索 |
+| /api/recommend | POST | 案例推荐 |
+| /api/qa | POST | 智能问答 |
+| /api/analyze | POST | 问题分析 |
+| /api/health | GET | 健康检查 |
+
+### 6.4 Web界面设计
+
+**页面列表**:
+1. **Dashboard** - 系统概览和统计
+2. **Search** - 向量检索界面
+3. **Q&A** - 智能问答界面
+4. **Analyze** - 问题分析界面
+
+**技术栈**:
+- Bootstrap 5 - 响应式设计
+- JavaScript (Fetch API) - 异步交互
+- Django Templates - 服务端渲染
+
+### 6.5 实现文件
+- `cases/rag/vector_retriever.py` - 向量检索器
+- `cases/rag/case_recommender.py` - 案例推荐引擎
+- `cases/rag/qa_engine.py` - 智能问答引擎
+- `cases/api_views.py` - REST API视图
+- `cases/rag_views.py` - Web界面视图
+- `rag_cli.py` - 命令行工具
+
+---
+
+## 7. 模块六：高质量案例收集（进行中）
+
+### 7.1 模块职责
+从权威数据源收集高质量Linux内核问题案例，确保案例的真实性、完整性和技术准确性。
+
+### 7.2 数据源设计
+
+#### 7.2.1 Git Fix Commits
+- **来源**: Linux内核Git仓库
+- **内容**: 实际bug修复提交
+- **质量**: 高（包含详细commit message）
+- **数量**: 30 cases/cycle
+
+#### 7.2.2 CVE Database
+- **来源**: CVE漏洞数据库
+- **内容**: 安全漏洞案例
+- **质量**: 高（官方验证）
+- **数量**: 30 cases/cycle
+
+#### 7.2.3 Kernel Documentation
+- **来源**: Linux内核官方文档
+- **内容**: 故障排查指南
+- **质量**: 高（官方文档）
+- **数量**: 30 cases/cycle
+
+#### 7.2.4 LKML (Linux Kernel Mailing List)
+- **来源**: 内核邮件列表
+- **内容**: 开发者讨论和问题分析
+- **质量**: 高（专家见解）
+- **数量**: 10 cases/cycle
+
+#### 7.2.5 Kernel Bugzilla
+- **来源**: 官方Bug跟踪系统
+- **内容**: 结构化bug报告
+- **质量**: 高（可复现）
+- **数量**: 10 cases/cycle
+
+### 7.3 收集流程
+
+```
+启动收集器
+    │
+    ▼
+收集周期开始
+    │
+    ├─> Git Fixes (30 cases)
+    ├─> CVE Database (30 cases)
+    ├─> Kernel Docs (30 cases)
+    ├─> LKML (10 cases)
+    └─> Bugzilla (10 cases)
+    │
+    ▼
+质量过滤 (quality_score >= 80)
+    │
+    ▼
+去重检查 (content_hash)
+    │
+    ▼
+保存到数据库 (80% Training, 20% Test)
+    │
+    ▼
+检查目标 (1000+ cases)
+    │
+    ├─> 未达到: 等待5分钟，继续下一周期
+    └─> 已达到: 停止收集
+```
+
+### 7.4 质量保证机制
+
+#### 7.4.1 唯一性保证
+```python
+def _generate_content_hash(case_data):
+    """生成内容哈希"""
+    content = f"{case_data['title']}|{case_data['phenomenon']}|{case_data['root_cause']}"
+    return hashlib.md5(content.encode('utf-8')).hexdigest()
+```
+
+#### 7.4.2 标题唯一性
+- 每个案例具有描述性标题
+- 标题反映具体问题内容
+- 避免通用标题重复
+
+#### 7.4.3 质量评分
+- **最低阈值**: 80分
+- **评估维度**: 完整性、准确性、可复现性
+- **自动过滤**: 低质量案例自动跳过
+
+### 7.5 后台收集器设计
+
+```python
+class BackgroundCollector:
+    """后台收集器"""
+    
+    def __init__(self):
+        self.log_file = '/var/log/collector.log'
+        self.target = 1000
+    
+    def run(self):
+        """主循环"""
+        while not self.target_reached():
+            self.run_collection_cycle()
+            time.sleep(300)  # 5分钟间隔
+    
+    def run_collection_cycle(self):
+        """执行收集周期"""
+        # 收集案例
+        # 质量过滤
+        # 保存数据库
+        # 记录日志
+```
+
+### 7.6 监控和管理
+
+#### 7.6.1 监控脚本
+```bash
+# 查看收集器状态
+./monitor_collector.sh
+
+# 查看实时日志
+tail -f /var/log/collector.log
+
+# 检查数据库进度
+python3 -c "from cases.models import TrainingCase, TestCase; ..."
+```
+
+#### 7.6.2 管理命令
+```bash
+# 停止收集器
+kill $(cat /tmp/collector.pid)
+
+# 重启收集器
+nohup python3 run_background_collector.py &
+```
+
+### 7.7 实现文件
+- `collect_high_quality_cases.py` - 高质量案例收集器
+- `collect_real_cases.py` - 真实案例收集器
+- `cases/acquisition/lkml_fetcher.py` - LKML收集器
+- `cases/acquisition/bugzilla_fetcher.py` - Bugzilla收集器
+- `run_background_collector.py` - 后台收集运行器
+- `monitor_collector.sh` - 监控脚本
+- `COLLECTOR_STATUS.md` - 状态文档
+
+### 7.8 当前进度 (2026-03-20)
+- **Training cases**: 203
+- **Test cases**: 57
+- **Total**: 260/1000 (26.0%)
+- **Status**: 后台收集器运行中
+- **PID**: 3243205
+- **Estimated completion**: 1-2小时
+
+---
+
+## 8. 数据流转设计
+
+### 8.1 案例数据流转
 ```
 技术社区 ──爬虫──> 原始数据 ──清洗──> 案例数据
                                          │
@@ -1057,7 +1302,7 @@ async def determine_module(user_input: str) -> str:
                                          PostgreSQL (版本存储)
 ```
 
-### 6.3 问题分析数据流转
+### 8.3 问题分析数据流转
 ```
 用户输入 ──> 预处理 ──> 模块判断 ──> RAG检索
                                          │

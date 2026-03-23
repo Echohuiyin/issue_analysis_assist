@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3">RAG系统仪表板</h1>
+            <p class="text-muted">Linux内核问题智能分析系统</p>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-white bg-primary">
+                <div class="card-body">
+                    <h5 class="card-title">训练案例总数</h5>
+                    <h2 class="card-text">{{ total_cases }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-success">
+                <div class="card-body">
+                    <h5 class="card-title">向量嵌入完成</h5>
+                    <h2 class="card-text">{{ cases_with_embeddings }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-info">
+                <div class="card-body">
+                    <h5 class="card-title">内核模块覆盖</h5>
+                    <h2 class="card-text">{{ module_stats|length }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-warning">
+                <div class="card-body">
+                    <h5 class="card-title">数据来源</h5>
+                    <h2 class="card-text">{{ source_stats|length }}</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 功能入口 -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">🔍 案例检索</h5>
+                    <p class="card-text">基于语义相似度检索相关案例</p>
+                    <a href="{% url 'rag_search' %}" class="btn btn-primary">开始检索</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">💬 智能问答</h5>
+                    <p class="card-text">基于RAG的智能问答系统</p>
+                    <a href="{% url 'rag_qa' %}" class="btn btn-success">开始提问</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">🔬 问题分析</h5>
+                    <p class="card-text">综合分析内核问题</p>
+                    <a href="{% url 'rag_analyze' %}" class="btn btn-info">开始分析</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">📚 API文档</h5>
+                    <p class="card-text">REST API接口文档</p>
+                    <a href="#" class="btn btn-secondary">查看文档</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模块分布 -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">模块分布</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>模块</th>
+                                <th>数量</th>
+                                <th>占比</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for module, count in module_stats.items %}
+                            <tr>
+                                <td>{{ module }}</td>
+                                <td>{{ count }}</td>
+                                <td>{{ count|floatformat:0 }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">来源分布</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>来源</th>
+                                <th>数量</th>
+                                <th>占比</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for source, count in source_stats.items %}
+                            <tr>
+                                <td>{{ source }}</td>
+                                <td>{{ count }}</td>
+                                <td>{{ count|floatformat:0 }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快速开始 -->
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">快速开始</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6>🔍 案例检索</h6>
+                            <pre><code>curl -X POST http://localhost:8000/cases/api/search/ \
+  -H "Content-Type: application/json" \
+  -d '{"query": "kernel panic", "top_k": 5}'</code></pre>
+                        </div>
+                        <div class="col-md-4">
+                            <h6>💬 智能问答</h6>
+                            <pre><code>curl -X POST http://localhost:8000/cases/api/qa/ \
+  -H "Content-Type: application/json" \
+  -d '{"question": "如何排查内存泄漏？"}'</code></pre>
+                        </div>
+                        <div class="col-md-4">
+                            <h6>💻 CLI工具</h6>
+                            <pre><code>python rag_cli.py search "kernel panic"
+python rag_cli.py qa "如何排查内存泄漏？"</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3">🔍 案例检索</h1>
+            <p class="text-muted">基于语义相似度检索相关案例</p>
+        </div>
+    </div>
+
+    <!-- 检索表单 -->
+    <div class="row mb-4">
+        <div class="col">
+            <div class="card">
+                <div class="card-body">
+                    <form id="searchForm">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label for="query" class="form-label">查询内容</label>
+                                    <textarea class="form-control" id="query" rows="3" 
+                                              placeholder="输入问题描述，例如：kernel panic 内存崩溃"></textarea>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="top_k" class="form-label">返回数量</label>
+                                    <input type="number" class="form-control" id="top_k" value="5" min="1" max="20">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="threshold" class="form-label">相似度阈值</label>
+                                    <input type="range" class="form-range" id="threshold" 
+                                           value="0.5" min="0" max="1" step="0.1">
+                                    <small class="text-muted">当前值: <span id="thresholdValue">0.5</span></small>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="searchBtn">
+                            <span class="spinner-border spinner-border-sm d-none" id="searchSpinner"></span>
+                            开始检索
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 检索结果 -->
+    <div class="row">
+        <div class="col">
+            <div id="resultsContainer" class="d-none">
+                <div class="alert alert-info">
+                    找到 <strong id="resultCount">0</strong> 个相似案例
+                </div>
+                <div id="resultsList"></div>
+            </div>
+            <div id="noResults" class="d-none">
+                <div class="alert alert-warning">
+                    未找到相似案例，请尝试调整查询内容或降低相似度阈值
+                </div>
+            </div>
+            <div id="errorContainer" class="d-none">
+                <div class="alert alert-danger" id="errorMessage"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('threshold').addEventListener('input', function(e) {
+    document.getElementById('thresholdValue').textContent = e.target.value;
+});
+
+document.getElementById('searchForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const query = document.getElementById('query').value.trim();
+    const top_k = parseInt(document.getElementById('top_k').value);
+    const threshold = parseFloat(document.getElementById('threshold').value);
+    
+    if (!query) {
+        alert('请输入查询内容');
+        return;
+    }
+    
+    // 显示加载状态
+    document.getElementById('searchBtn').disabled = true;
+    document.getElementById('searchSpinner').classList.remove('d-none');
+    document.getElementById('resultsContainer').classList.add('d-none');
+    document.getElementById('noResults').classList.add('d-none');
+    document.getElementById('errorContainer').classList.add('d-none');
+    
+    try {
+        const response = await fetch('/cases/api/search/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                query: query,
+                top_k: top_k,
+                threshold: threshold
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.cases && data.cases.length > 0) {
+                displayResults(data.cases);
+            } else {
+                document.getElementById('noResults').classList.remove('d-none');
+            }
+        } else {
+            showError(data.error || '检索失败');
+        }
+    } catch (error) {
+        showError('网络错误: ' + error.message);
+    } finally {
+        document.getElementById('searchBtn').disabled = false;
+        document.getElementById('searchSpinner').classList.add('d-none');
+    }
+});
+
+function displayResults(cases) {
+    document.getElementById('resultCount').textContent = cases.length;
+    document.getElementById('resultsContainer').classList.remove('d-none');
+    
+    const resultsHtml = cases.map((case_item, index) => `
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">${index + 1}. ${escapeHtml(case_item.title)}</h5>
+                <span class="badge bg-success">${(case_item.similarity * 100).toFixed(2)}%</span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>模块:</strong> ${case_item.module || 'N/A'}</p>
+                        <p><strong>来源:</strong> ${case_item.source || 'N/A'}</p>
+                        <p><strong>质量分数:</strong> ${case_item.quality_score || 'N/A'}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>相似度:</strong> ${(case_item.similarity * 100).toFixed(2)}%</p>
+                        <p><strong>案例ID:</strong> ${case_item.case_id}</p>
+                    </div>
+                </div>
+                <hr>
+                <div class="mb-2">
+                    <strong>问题现象:</strong>
+                    <p class="text-muted">${escapeHtml(case_item.phenomenon || '无描述').substring(0, 200)}...</p>
+                </div>
+                <div class="mb-2">
+                    <strong>根本原因:</strong>
+                    <p class="text-muted">${escapeHtml(case_item.root_cause || '无原因').substring(0, 200)}...</p>
+                </div>
+                <div class="mb-2">
+                    <strong>解决方案:</strong>
+                    <p class="text-muted">${escapeHtml(case_item.solution || '无方案').substring(0, 200)}...</p>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    document.getElementById('resultsList').innerHTML = resultsHtml;
+}
+
+function showError(message) {
+    document.getElementById('errorContainer').classList.remove('d-none');
+    document.getElementById('errorMessage').textContent = message;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

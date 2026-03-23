@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3">🔬 问题分析</h1>
+            <p class="text-muted">综合分析内核问题，提供相似案例和解决方案</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 输入区域 -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">问题描述</h5>
+                </div>
+                <div class="card-body">
+                    <form id="analyzeForm">
+                        <div class="mb-3">
+                            <label for="issue_description" class="form-label">问题描述 *</label>
+                            <textarea class="form-control" id="issue_description" rows="4" 
+                                      placeholder="详细描述您遇到的问题，例如：系统运行一段时间后出现kernel panic"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="logs" class="form-label">相关日志（可选）</label>
+                            <textarea class="form-control" id="logs" rows="6" 
+                                      placeholder="粘贴相关的内核日志或错误信息"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-info" id="analyzeBtn">
+                            <span class="spinner-border spinner-border-sm d-none" id="analyzeSpinner"></span>
+                            开始分析
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果区域 -->
+        <div class="col-md-6">
+            <div id="resultContainer" class="d-none">
+                <!-- 置信度 -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">分析置信度</h5>
+                        <div class="progress" style="height: 25px;">
+                            <div class="progress-bar bg-success" id="confidenceBar" 
+                                 role="progressbar" style="width: 0%">0%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 相似案例 -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">相似案例</h5>
+                    </div>
+                    <div class="card-body" id="similarCasesContainer">
+                        <p class="text-muted">分析完成后将显示相似案例</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorContainer" class="d-none">
+                <div class="alert alert-danger" id="errorMessage"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分析摘要 -->
+    <div class="row mt-4">
+        <div class="col">
+            <div id="summaryContainer" class="d-none">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">分析摘要</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="summaryText"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('analyzeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const issue_description = document.getElementById('issue_description').value.trim();
+    const logs = document.getElementById('logs').value.trim();
+    
+    if (!issue_description) {
+        alert('请输入问题描述');
+        return;
+    }
+    
+    // 显示加载状态
+    document.getElementById('analyzeBtn').disabled = true;
+    document.getElementById('analyzeSpinner').classList.remove('d-none');
+    document.getElementById('resultContainer').classList.add('d-none');
+    document.getElementById('summaryContainer').classList.add('d-none');
+    document.getElementById('errorContainer').classList.add('d-none');
+    
+    try {
+        const response = await fetch('/cases/api/analyze/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                issue_description: issue_description,
+                logs: logs
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayResults(data.analysis);
+        } else {
+            showError(data.error || '分析失败');
+        }
+    } catch (error) {
+        showError('网络错误: ' + error.message);
+    } finally {
+        document.getElementById('analyzeBtn').disabled = false;
+        document.getElementById('analyzeSpinner').classList.add('d-none');
+    }
+});
+
+function displayResults(analysis) {
+    document.getElementById('resultContainer').classList.remove('d-none');
+    
+    // 显示置信度
+    const confidence = (analysis.confidence_score * 100).toFixed(2);
+    const confidenceBar = document.getElementById('confidenceBar');
+    confidenceBar.style.width = confidence + '%';
+    confidenceBar.textContent = confidence + '%';
+    
+    // 显示相似案例
+    if (analysis.similar_cases && analysis.similar_cases.length > 0) {
+        const casesHtml = analysis.similar_cases.map((case_item, index) => `
+            <div class="card mb-2">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        ${index + 1}. ${escapeHtml(case_item.title)}
+                        <span class="badge bg-success float-end">${(case_item.similarity * 100).toFixed(2)}%</span>
+                    </h6>
+                    <p class="card-text small">
+                        <strong>模块:</strong> ${case_item.module || 'N/A'}<br>
+                        <strong>来源:</strong> ${case_item.source || 'N/A'}
+                    </p>
+                    ${case_item.root_cause ? `
+                        <p class="card-text small text-muted">
+                            <strong>根本原因:</strong> ${escapeHtml(case_item.root_cause).substring(0, 150)}...
+                        </p>
+                    ` : ''}
+                    ${case_item.solution ? `
+                        <p class="card-text small text-muted">
+                            <strong>解决方案:</strong> ${escapeHtml(case_item.solution).substring(0, 150)}...
+                        </p>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+        document.getElementById('similarCasesContainer').innerHTML = casesHtml;
+    } else {
+        document.getElementById('similarCasesContainer').innerHTML = '<p class="text-muted">未找到相似案例</p>';
+    }
+    
+    // 显示分析摘要
+    if (analysis.summary) {
+        document.getElementById('summaryContainer').classList.remove('d-none');
+        document.getElementById('summaryText').innerHTML = formatSummary(analysis.summary);
+    }
+}
+
+function formatSummary(text) {
+    return text
+        .replace(/\n/g, '<br>')
+        .replace(/### (.*)/g, '<h5 class="mt-3">$1</h5>')
+        .replace(/## (.*)/g, '<h4 class="mt-3">$1</h4>')
+        .replace(/# (.*)/g, '<h3 class="mt-3">$1</h3>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>');
+}
+
+function showError(message) {
+    document.getElementById('errorContainer').classList.remove('d-none');
+    document.getElementById('errorMessage').textContent = message;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

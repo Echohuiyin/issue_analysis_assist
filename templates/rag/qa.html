@@ -1,0 +1,184 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3">💬 智能问答</h1>
+            <p class="text-muted">基于RAG的智能问答系统</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 问答区域 -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">提问</h5>
+                </div>
+                <div class="card-body">
+                    <form id="qaForm">
+                        <div class="mb-3">
+                            <label for="question" class="form-label">您的问题</label>
+                            <textarea class="form-control" id="question" rows="3" 
+                                      placeholder="例如：如何排查内核内存泄漏问题？"></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="top_k" class="form-label">引用案例数量</label>
+                                    <input type="number" class="form-control" id="top_k" value="3" min="1" max="10">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="min_similarity" class="form-label">最小相似度</label>
+                                    <input type="range" class="form-range" id="min_similarity" 
+                                           value="0.5" min="0" max="1" step="0.1">
+                                    <small class="text-muted">当前值: <span id="similarityValue">0.5</span></small>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success" id="qaBtn">
+                            <span class="spinner-border spinner-border-sm d-none" id="qaSpinner"></span>
+                            提交问题
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 答案显示区域 -->
+            <div id="answerContainer" class="d-none mt-4">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">答案</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0">回答内容</h6>
+                                <span class="badge bg-info" id="confidenceBadge">置信度: 0%</span>
+                            </div>
+                            <div id="answerText" class="p-3 bg-light rounded"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorContainer" class="d-none mt-4">
+                <div class="alert alert-danger" id="errorMessage"></div>
+            </div>
+        </div>
+
+        <!-- 引用案例区域 -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">引用案例</h5>
+                </div>
+                <div class="card-body" id="casesContainer">
+                    <p class="text-muted">提交问题后将显示相关案例</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('min_similarity').addEventListener('input', function(e) {
+    document.getElementById('similarityValue').textContent = e.target.value;
+});
+
+document.getElementById('qaForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const question = document.getElementById('question').value.trim();
+    const top_k = parseInt(document.getElementById('top_k').value);
+    const min_similarity = parseFloat(document.getElementById('min_similarity').value);
+    
+    if (!question) {
+        alert('请输入问题');
+        return;
+    }
+    
+    // 显示加载状态
+    document.getElementById('qaBtn').disabled = true;
+    document.getElementById('qaSpinner').classList.remove('d-none');
+    document.getElementById('answerContainer').classList.add('d-none');
+    document.getElementById('errorContainer').classList.add('d-none');
+    
+    try {
+        const response = await fetch('/cases/api/qa/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                question: question,
+                top_k: top_k,
+                min_similarity: min_similarity
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayAnswer(data.answer, data.confidence, data.cases);
+        } else {
+            showError(data.error || '问答失败');
+        }
+    } catch (error) {
+        showError('网络错误: ' + error.message);
+    } finally {
+        document.getElementById('qaBtn').disabled = false;
+        document.getElementById('qaSpinner').classList.add('d-none');
+    }
+});
+
+function displayAnswer(answer, confidence, cases) {
+    document.getElementById('answerContainer').classList.remove('d-none');
+    document.getElementById('confidenceBadge').textContent = `置信度: ${(confidence * 100).toFixed(2)}%`;
+    document.getElementById('answerText').innerHTML = formatAnswer(answer);
+    
+    // 显示引用案例
+    if (cases && cases.length > 0) {
+        const casesHtml = cases.map((case_item, index) => `
+            <div class="card mb-2">
+                <div class="card-body p-2">
+                    <h6 class="card-title">${index + 1}. ${escapeHtml(case_item.title)}</h6>
+                    <p class="card-text small text-muted">
+                        相似度: ${(case_item.similarity * 100).toFixed(2)}%<br>
+                        模块: ${case_item.module || 'N/A'}
+                    </p>
+                </div>
+            </div>
+        `).join('');
+        document.getElementById('casesContainer').innerHTML = casesHtml;
+    } else {
+        document.getElementById('casesContainer').innerHTML = '<p class="text-muted">无相关案例</p>';
+    }
+}
+
+function formatAnswer(text) {
+    // 简单的Markdown格式化
+    return text
+        .replace(/\n/g, '<br>')
+        .replace(/### (.*)/g, '<h5>$1</h5>')
+        .replace(/## (.*)/g, '<h4>$1</h4>')
+        .replace(/# (.*)/g, '<h3>$1</h3>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>');
+}
+
+function showError(message) {
+    document.getElementById('errorContainer').classList.remove('d-none');
+    document.getElementById('errorMessage').textContent = message;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
